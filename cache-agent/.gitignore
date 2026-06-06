@@ -1,5 +1,8 @@
 
 
+# Secrets
+agent.conf
+
 # Python
 __pycache__/
 *.py[cod]
