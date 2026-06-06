@@ -8,8 +8,10 @@ services:
     command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
     ports:
       - "${REDIS_HOST}:${REDIS_PORT}:6379"
+      - "8892:8892"
     volumes:
       - mycache-redis:/data
+      - ./cache-agent:/cache-agent
     networks:
       - mycache-net
     healthcheck:
@@ -17,6 +19,21 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # ── Redis Commander (web UI) ──────────────────────────────────────────────────
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: mycache-redis-ui
+    environment:
+      REDIS_HOSTS: local:mycache-redis:6379:0:${REDIS_PASSWORD}
+    ports:
+      - "8081:8081"
+    networks:
+      - mycache-net
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   mycache-redis:

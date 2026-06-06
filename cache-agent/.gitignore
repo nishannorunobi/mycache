@@ -1,0 +1,16 @@
+
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Logs & runtime
+*.log
+memory/*.log

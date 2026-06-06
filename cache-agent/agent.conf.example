@@ -1,0 +1,6 @@
+# Cache Agent — Configuration
+# Copy to agent.conf and fill in your values.
+
+ANTHROPIC_API_KEY=your-api-key-here
+REDIS_PASSWORD=cache_pass
+PORT=8892
