@@ -9,9 +9,12 @@ services:
     ports:
       - "${REDIS_HOST}:${REDIS_PORT}:6379"
       - "8892:8892"
+    environment:
+      LOG_MIRROR_ROOT: /mountspace/logs/myworkspace/projectspace/mycache
     volumes:
       - mycache-redis:/data
       - ./cache-agent:/cache-agent
+      - ../../mountspace/logs:/mountspace/logs
     networks:
       - mycache-net
     healthcheck:
