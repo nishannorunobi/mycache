@@ -16,7 +16,9 @@ services:
       - ./cache-agent:/cache-agent
       - ../../mountspace/logs:/mountspace/logs
     networks:
-      - mycache-net
+      mycache-net:
+      my_docker_network:
+        ipv4_address: 172.28.0.50      # static IP within my_docker_network's subnet
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
@@ -32,7 +34,9 @@ services:
     ports:
       - "8081:8081"
     networks:
-      - mycache-net
+      mycache-net:
+      my_docker_network:
+        ipv4_address: 172.28.0.51      # static IP within my_docker_network's subnet
     depends_on:
       redis:
         condition: service_healthy
@@ -44,3 +48,6 @@ volumes:
 networks:
   mycache-net:
     driver: bridge
+  # Shared network created by myworkspace/dockerspace/docker_network.sh (via docker_up).
+  my_docker_network:
+    external: true
