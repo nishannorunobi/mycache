@@ -19,8 +19,18 @@ GREEN="\033[32m"; YELLOW="\033[33m"; BOLD="\033[1m"; RESET="\033[0m"
 
 source .env
 
+# --no-ui starts the broker only, leaving redis-commander (mycache-redis-ui) down.
+# The UI is a convenience, so callers that want a lean start can skip it.
+WITH_UI=true
+[ "${1:-}" = "--no-ui" ] && WITH_UI=false
+
 echo -e "${BOLD}==> Starting Redis ${REDIS_VERSION}...${RESET}"
-docker compose up -d
+if $WITH_UI; then
+    docker compose up -d
+else
+    docker compose up -d redis
+    echo -e "${YELLOW}    Redis UI not started (--no-ui).${RESET}"
+fi
 
 echo ""
 echo -e "${GREEN}${BOLD}==> Redis is up${RESET}"

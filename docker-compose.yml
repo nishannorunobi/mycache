@@ -11,6 +11,8 @@ services:
       - "8892:8892"
     environment:
       LOG_MIRROR_ROOT: /mountspace/logs/myworkspace/projectspace/mycache
+      TZ: ${TZ:-America/New_York}   # same clock as the host, so host and container mirror logs line up
+      PYTHONUNBUFFERED: "1"          # else the agent's output sits in the awk|tee pipe buffer
     volumes:
       - mycache-redis:/data
       - ./cache-agent:/cache-agent
