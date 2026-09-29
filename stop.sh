@@ -15,11 +15,6 @@ cd "$SCRIPT_DIR"
 
 GREEN="\033[32m"; YELLOW="\033[33m"; BOLD="\033[1m"; RESET="\033[0m"
 
-# Idempotent: nothing to stop when no container of this project runs.
-if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'mycache-redis\|mycache-redis-ui'; then
-    echo -e "${GREEN}[  OK  ]${RESET} Redis already stopped"
-    exit 0
-fi
 echo -e "${YELLOW}==> Stopping Redis...${RESET}"
 docker compose down
 echo -e "${GREEN}    Redis stopped. Data is preserved in Docker volumes.${RESET}"
