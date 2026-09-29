@@ -24,6 +24,16 @@ source .env
 WITH_UI=true
 [ "${1:-}" = "--no-ui" ] && WITH_UI=false
 
+# Standalone: the shared Docker network this compose joins — created here if missing,
+# so the project works without myworkspace (same name and subnet the workspace uses).
+docker network inspect my_docker_network >/dev/null 2>&1 \
+    || docker network create --subnet=172.28.0.0/16 my_docker_network >/dev/null
+running() { docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$1"; }
+# Idempotent: nothing to do when what was asked for is already up.
+if running mycache-redis && { ! $WITH_UI || running mycache-redis-ui; }; then
+    echo -e "${GREEN}[  OK  ]${RESET} Redis already running"
+    exit 0
+fi
 echo -e "${BOLD}==> Starting Redis ${REDIS_VERSION}...${RESET}"
 if $WITH_UI; then
     docker compose up -d
