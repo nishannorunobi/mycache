@@ -43,3 +43,11 @@ docker exec "$CONTAINER" sh -c \
     "pkill -f '[u]vicorn server:app' 2>/dev/null \
      && echo '[OK] Cache agent stopped.' \
      || echo '[WARN] No running cache-agent found.'"
+
+# Wait until it no longer answers (it can serve a moment after the signal) — so an
+# immediate start does not mistake a dying agent for a running one.
+for _ in $(seq 1 15); do
+    curl -fsS --max-time 1 -o /dev/null "http://localhost:8892/health" 2>/dev/null || exit 0
+    sleep 1
+done
+echo "[WARN] still answering on :8892 after stop"

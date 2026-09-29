@@ -41,7 +41,9 @@ if ! docker inspect "$CONTAINER" --format '{{.State.Running}}' 2>/dev/null | gre
 fi
 
 # Build venv if missing, Python broken, or uvicorn not installed (Alpine: sh not bash)
-if ! docker exec "$CONTAINER" sh -c "test -f $AGENT_DIR/.venv/bin/uvicorn" &>/dev/null; then
+# "venv exists" is not "venv works": run it. A .venv whose python is missing in this
+# container ("uvicorn: not found") is rebuilt (build.sh — the first build needs network).
+if ! docker exec "$CONTAINER" sh -c "$AGENT_DIR/.venv/bin/python -c 'import uvicorn'" &>/dev/null; then
     echo "[INFO] Building cache-agent venv inside container..."
     docker exec "$CONTAINER" rm -rf "$AGENT_DIR/.venv"
     docker exec "$CONTAINER" sh "$AGENT_DIR/build.sh"
@@ -61,7 +63,15 @@ docker exec "$CONTAINER" sh -c \
         --host 0.0.0.0 --port \${PORT:-8892} \
         --no-use-colors --access-log" \
     < /dev/null 2>&1 \
-    | awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }' >> "$LOG_FILE" &
+    | awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }' >> "$LOG_FILE" 2>/dev/null &   # file only: never hold the caller's output pipe
 disown
 
-echo "[OK] Cache agent started inside $CONTAINER."
+# Say OK only when the agent really answers — the launch above returns at once even if
+# uvicorn dies a second later (e.g. a broken .venv: "uvicorn: not found").
+for _ in $(seq 1 30); do
+    curl -fsS --max-time 2 -o /dev/null "http://localhost:8892/health" 2>/dev/null && { echo "[OK] Cache agent running on :8892"; exit 0; }
+    sleep 1
+done
+echo "[ERROR] Cache agent did not come up on :8892 — its output:"
+tail -5 "$LOG_FILE" 2>/dev/null | sed -E 's/^(\[[0-9-]+ [0-9:]+\] )+/    /'
+exit 1
