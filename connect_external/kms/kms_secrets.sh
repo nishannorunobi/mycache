@@ -1,4 +1,5 @@
-# kms_secrets.sh — mycache's OWN client for kms (sourced by start.sh and cache-agent/host_start.sh).
+# connect_external/kms/kms_secrets.sh — mycache's OWN client for kms (sourced by start.sh and
+# cache-agent/host_start.sh). connect_external/ = one folder per external component mycache talks to.
 # mycache uses no file of the kms project: it only makes network calls to the kms HTTP API.
 #     source kms_secrets.sh
 #     kms_get <approle> <kv path> <KEY>…      e.g.  kms_get mycache-redis mycache/redis REDIS_PASSWORD

@@ -20,9 +20,9 @@ GREEN="\033[32m"; YELLOW="\033[33m"; BOLD="\033[1m"; RESET="\033[0m"
 source .env      # non-secret settings only (version, host, port)
 
 # The password comes from kms over its HTTP API (story KMS [1.4]) — mycache's own client
-# kms_secrets.sh, no kms file used. Kept in memory, never printed, never a file.
+# connect_external/kms/kms_secrets.sh, no kms file used. Kept in memory, never printed, never a file.
 # kms sealed / down → stop here: no fallback to a secret file.
-source "$SCRIPT_DIR/kms_secrets.sh"
+source "$SCRIPT_DIR/connect_external/kms/kms_secrets.sh"
 kms_get mycache-redis mycache/redis REDIS_PASSWORD || exit 1
 
 # --no-ui starts the broker only, leaving redis-commander (mycache-redis-ui) down.
