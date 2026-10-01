@@ -39,6 +39,8 @@ AGENT_DIR="/cache-agent"
 # ../connect_external/kms/kms_secrets.sh, no kms file used. In memory only, handed to the agent by NAME
 # (docker exec -e ANTHROPIC_API_KEY): the value never appears on a command line.
 # REDIS_PASSWORD is already in the container's environment. kms sealed / down → stop here.
+# where kms is: mycache's own settings (only the KMS_* lines of ../.env — kms may be on another machine)
+[ -f "$SCRIPT_DIR/../.env" ] && source <(grep -E '^KMS_(URL|APPROLE_DIR)=' "$SCRIPT_DIR/../.env")
 source "$SCRIPT_DIR/../connect_external/kms/kms_secrets.sh"
 kms_get mycache-cache-agent shared/anthropic ANTHROPIC_API_KEY || exit 1
 

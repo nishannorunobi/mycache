@@ -17,7 +17,7 @@ GREEN="\033[32m"; YELLOW="\033[33m"; BOLD="\033[1m"; RESET="\033[0m"
 
 [ -f ".env" ] || { echo -e "\033[31m[ERROR]${RESET} .env not found."; exit 1; }
 
-source .env      # non-secret settings only (version, host, port)
+source .env      # non-secret settings only: version, host, port, KMS_URL, KMS_APPROLE_DIR
 
 # The password comes from kms over its HTTP API (story KMS [1.4]) — mycache's own client
 # connect_external/kms/kms_secrets.sh, no kms file used. Kept in memory, never printed, never a file.

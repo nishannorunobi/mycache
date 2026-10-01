@@ -29,4 +29,5 @@ system, OpenBao) and are fetched over its HTTP API every time mycache starts.
 - **kms sealed** → `start.sh` stops with *"kms is SEALED"*: unseal it (startup prompt or the
   kms UI), then start again. A Redis that is already running keeps working.
 - How mycache talks to kms: [`connect_external/kms/`](connect_external/kms/README.md) —
-  network calls only, no kms file is used.
+  network calls only, no kms file is used, so mycache and kms can run on **different
+  machines**: set `KMS_URL` and `KMS_APPROLE_DIR` in `.env`.

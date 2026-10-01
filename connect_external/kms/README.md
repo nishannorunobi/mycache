@@ -17,5 +17,14 @@ kept in memory, never printed. kms sealed / down / no access → clear error, th
 | Redis (`start.sh`) | `mycache-redis` | `mycache/redis` | `REDIS_PASSWORD` |
 | cache-agent (`cache-agent/host_start.sh`) | `mycache-cache-agent` | `shared/anthropic` | `ANTHROPIC_API_KEY` |
 
-Login files: `<workspace>/mountspace/secrets/kms/approle/<approle>/{role_id,secret_id}` (700/600),
-written once by the owner when mycache was added to kms. Override: `KMS_APPROLE_DIR`, `KMS_URL`.
+## mycache and kms may run on different machines
+
+Everything goes over the network; the only two settings are in mycache's own `.env`:
+
+| Setting | Default (same PC) | Other machine |
+|---|---|---|
+| `KMS_URL` | `http://127.0.0.1:8110` | `https://<kms-host>:<port>` (needs kms on the LAN with TLS — kms story) |
+| `KMS_APPROLE_DIR` | `<workspace>/mountspace/secrets/kms/approle` | a folder on this machine holding the copied `<approle>/role_id` + `secret_id` (600) |
+
+The login files are written by the owner when mycache is added to kms (`add_project.sh mycache`
+on the kms machine); on another machine the owner copies the two files there once.

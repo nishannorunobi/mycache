@@ -8,8 +8,11 @@
 #   POST /v1/auth/approle/login           {role_id, secret_id} → 1-hour token
 #   GET  /v1/kv/data/<kv path>            header X-Vault-Token → {"data":{"data":{KEY: value}}}
 #   POST /v1/auth/token/revoke-self       the token is thrown away right after reading
-# Login files: <KMS_APPROLE_DIR>/<approle>/{role_id,secret_id} — default the workspace's
-# mountspace/secrets/kms/approle (written once by the owner when mycache was added to kms).
+# Where kms is and where the login files are come from mycache's own settings (.env), because
+# mycache and kms may run on DIFFERENT machines:
+#   KMS_URL          default http://127.0.0.1:8110 (kms on this PC)
+#   KMS_APPROLE_DIR  default <workspace>/mountspace/secrets/kms/approle; on another machine:
+#                    the folder the owner copied <approle>/{role_id,secret_id} into (600)
 # Exports each KEY (value only in memory, nothing printed). kms sealed / down / no access /
 # key missing → clear error, return 1, nothing exported — no fallback to a secret file.
 # Secrets never become process arguments (bodies via stdin, token via a file descriptor).
@@ -20,7 +23,8 @@ kms_get() {
         || { echo "[ERROR] usage: kms_get <approle> <kv path> <KEY>…" >&2; return 1; }
     local url="${KMS_URL:-http://127.0.0.1:8110}" ws d code tok body k v
     ws="$(d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; while [ ! -d "$d/mountspace" ] && [ "$d" != "/" ]; do d="$(dirname "$d")"; done; echo "$d")"
-    d="${KMS_APPROLE_DIR:-$ws/mountspace/secrets/kms/approle}/$role"
+    [ -n "${KMS_APPROLE_DIR:-}" ] || KMS_APPROLE_DIR="$ws/mountspace/secrets/kms/approle"
+    d="$KMS_APPROLE_DIR/$role"
 
     code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$url/v1/sys/health" 2>/dev/null)"
     case "$code" in
