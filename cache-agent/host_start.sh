@@ -35,13 +35,12 @@ fi
 CONTAINER="mycache-redis"
 AGENT_DIR="/cache-agent"
 
-# The Anthropic key comes from kms (story KMS [1.4]) — in memory only, handed to the agent by
-# NAME (docker exec -e ANTHROPIC_API_KEY): the value never appears on a command line.
+# The Anthropic key comes from kms over its HTTP API (story KMS [1.4]) — mycache's own client
+# ../kms_secrets.sh, no kms file used. In memory only, handed to the agent by NAME
+# (docker exec -e ANTHROPIC_API_KEY): the value never appears on a command line.
 # REDIS_PASSWORD is already in the container's environment. kms sealed / down → stop here.
-KMS_FETCH="$SCRIPT_DIR/../../kms/lib/kms_fetch.sh"
-[ -f "$KMS_FETCH" ] || { echo "[ERROR] kms not found ($KMS_FETCH) — clone projectspace/kms" >&2; exit 1; }
-source "$KMS_FETCH"
-kms_fetch mycache-cache-agent shared/anthropic ANTHROPIC_API_KEY || exit 1
+source "$SCRIPT_DIR/../kms_secrets.sh"
+kms_get mycache-cache-agent shared/anthropic ANTHROPIC_API_KEY || exit 1
 
 if ! docker inspect "$CONTAINER" --format '{{.State.Running}}' 2>/dev/null | grep -q true; then
     echo "[ERROR] Container $CONTAINER is not running." >&2

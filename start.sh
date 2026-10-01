@@ -19,12 +19,11 @@ GREEN="\033[32m"; YELLOW="\033[33m"; BOLD="\033[1m"; RESET="\033[0m"
 
 source .env      # non-secret settings only (version, host, port)
 
-# The password comes from kms (story KMS [1.4]) — kept in memory, never printed, never a file.
+# The password comes from kms over its HTTP API (story KMS [1.4]) — mycache's own client
+# kms_secrets.sh, no kms file used. Kept in memory, never printed, never a file.
 # kms sealed / down → stop here: no fallback to a secret file.
-KMS_FETCH="$SCRIPT_DIR/../kms/lib/kms_fetch.sh"
-[ -f "$KMS_FETCH" ] || { echo -e "\033[31m[ERROR]${RESET} kms not found ($KMS_FETCH) — clone projectspace/kms"; exit 1; }
-source "$KMS_FETCH"
-kms_fetch mycache-redis mycache/redis REDIS_PASSWORD || exit 1
+source "$SCRIPT_DIR/kms_secrets.sh"
+kms_get mycache-redis mycache/redis REDIS_PASSWORD || exit 1
 
 # --no-ui starts the broker only, leaving redis-commander (mycache-redis-ui) down.
 # The UI is a convenience, so callers that want a lean start can skip it.
