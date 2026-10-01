@@ -1,5 +1,7 @@
 # Cache Agent — Configuration (no secrets)
-# Copy to agent.conf. The secrets come from elsewhere — never put them here:
-#   ANTHROPIC_API_KEY  from kms (kv/shared/anthropic), fetched by host_start.sh
-#   REDIS_PASSWORD     from the mycache-redis container's environment
+# Copy to agent.conf. The secrets are NOT in this file — never put them here:
+#   ANTHROPIC_API_KEY  lives in kms: kv/shared/anthropic — fetched by host_start.sh
+#   REDIS_PASSWORD     lives in kms: kv/mycache/redis — reaches the agent through the
+#                      mycache-redis container's environment (set by ../start.sh)
+# See / change them: ../README.md "Where are the secrets?"
 PORT=8892
