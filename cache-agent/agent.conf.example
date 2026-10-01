@@ -1,6 +1,5 @@
-# Cache Agent — Configuration
-# Copy to agent.conf and fill in your values.
-
-ANTHROPIC_API_KEY=<set-me>
-REDIS_PASSWORD=<set-me>
+# Cache Agent — Configuration (no secrets)
+# Copy to agent.conf. The secrets come from elsewhere — never put them here:
+#   ANTHROPIC_API_KEY  from kms (kv/shared/anthropic), fetched by host_start.sh
+#   REDIS_PASSWORD     from the mycache-redis container's environment
 PORT=8892

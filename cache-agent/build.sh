@@ -57,8 +57,7 @@ success "Dependencies installed."
 # ── Create agent.conf if missing ──────────────────────────────────────────────
 if [ ! -f "agent.conf" ]; then
     cp agent.conf.example agent.conf
-    printf '\n\033[31m[ACTION REQUIRED]\033[0m Edit agent.conf and set your ANTHROPIC_API_KEY\n'
-    printf '  vi agent.conf\n'
+    success "agent.conf created (no secrets — they come from kms at start)."
 else
     success "agent.conf exists."
 fi

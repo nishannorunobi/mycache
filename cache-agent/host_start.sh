@@ -35,6 +35,14 @@ fi
 CONTAINER="mycache-redis"
 AGENT_DIR="/cache-agent"
 
+# The Anthropic key comes from kms (story KMS [1.4]) — in memory only, handed to the agent by
+# NAME (docker exec -e ANTHROPIC_API_KEY): the value never appears on a command line.
+# REDIS_PASSWORD is already in the container's environment. kms sealed / down → stop here.
+KMS_FETCH="$SCRIPT_DIR/../../kms/lib/kms_fetch.sh"
+[ -f "$KMS_FETCH" ] || { echo "[ERROR] kms not found ($KMS_FETCH) — clone projectspace/kms" >&2; exit 1; }
+source "$KMS_FETCH"
+kms_fetch mycache-cache-agent shared/anthropic ANTHROPIC_API_KEY || exit 1
+
 if ! docker inspect "$CONTAINER" --format '{{.State.Running}}' 2>/dev/null | grep -q true; then
     echo "[ERROR] Container $CONTAINER is not running." >&2
     exit 1
@@ -57,7 +65,7 @@ docker exec "$CONTAINER" sh -c \
 # Start fresh; route logs to mountspace on the host via nohup+disown.
 mkdir -p "$(dirname "$LOG_FILE")"
 touch "$LOG_FILE" 2>/dev/null || true   # create if possible; never abort
-docker exec "$CONTAINER" sh -c \
+docker exec -e ANTHROPIC_API_KEY "$CONTAINER" sh -c \
     "cd $AGENT_DIR && . ./agent.conf && \
      .venv/bin/uvicorn server:app \
         --host 0.0.0.0 --port \${PORT:-8892} \

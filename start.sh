@@ -17,7 +17,14 @@ GREEN="\033[32m"; YELLOW="\033[33m"; BOLD="\033[1m"; RESET="\033[0m"
 
 [ -f ".env" ] || { echo -e "\033[31m[ERROR]${RESET} .env not found."; exit 1; }
 
-source .env
+source .env      # non-secret settings only (version, host, port)
+
+# The password comes from kms (story KMS [1.4]) — kept in memory, never printed, never a file.
+# kms sealed / down → stop here: no fallback to a secret file.
+KMS_FETCH="$SCRIPT_DIR/../kms/lib/kms_fetch.sh"
+[ -f "$KMS_FETCH" ] || { echo -e "\033[31m[ERROR]${RESET} kms not found ($KMS_FETCH) — clone projectspace/kms"; exit 1; }
+source "$KMS_FETCH"
+kms_fetch mycache-redis mycache/redis REDIS_PASSWORD || exit 1
 
 # --no-ui starts the broker only, leaving redis-commander (mycache-redis-ui) down.
 # The UI is a convenience, so callers that want a lean start can skip it.
@@ -35,8 +42,8 @@ fi
 echo ""
 echo -e "${GREEN}${BOLD}==> Redis is up${RESET}"
 echo -e "    Host      : ${BOLD}${REDIS_HOST}:${REDIS_PORT}${RESET}"
-echo -e "    Password  : ${BOLD}${REDIS_PASSWORD}${RESET}"
-echo -e "    URL       : ${BOLD}redis://:${REDIS_PASSWORD}@localhost:${REDIS_PORT}/0${RESET}"
+echo -e "    Password  : ${BOLD}in kms${RESET} (kv/mycache/redis — UI http://127.0.0.1:8110/ui)"
+echo -e "    URL       : ${BOLD}redis://:<password>@localhost:${REDIS_PORT}/0${RESET}"
 echo ""
 echo -e "    ${BOLD}./logs.sh${RESET}    — tail logs"
 echo -e "    ${BOLD}./status.sh${RESET}  — container status"

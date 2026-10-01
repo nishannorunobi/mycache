@@ -32,7 +32,7 @@ cd "$SCRIPT_DIR"
 [ -f "agent.conf" ] || { printf '\033[31m[ERROR]\033[0m agent.conf not found. Run ./build.sh first.\n'; exit 1; }
 
 . ./agent.conf
-[ -n "${ANTHROPIC_API_KEY:-}" ] || { printf '\033[31m[ERROR]\033[0m ANTHROPIC_API_KEY not set in agent.conf\n'; exit 1; }
+[ -n "${ANTHROPIC_API_KEY:-}" ] || { printf '\033[31m[ERROR]\033[0m ANTHROPIC_API_KEY not set — start the agent from the host: bash host_start.sh (it fetches the key from kms)\n'; exit 1; }
 
 PORT="${PORT:-8892}"
 LOG_FILE="memory/server.log"
