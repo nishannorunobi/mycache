@@ -35,6 +35,7 @@ system, OpenBao) and are fetched over its HTTP API every time mycache starts.
 - **First time:** each component signs itself up with kms (once, asks the kms owner's password):
   Redis server `bash connect_external/kms/register_to_kms.sh` ·
   cache-agent `bash cache-agent/connect_external/kms/register_to_kms.sh`
-- How mycache talks to kms: [`connect_external/kms/`](connect_external/kms/README.md) —
+- How mycache talks to kms: [`connect_external/kms/`](connect_external/kms/) — every script there
+  has a guide with the same name (`register_to_kms.md`, `add_secret_to_kms.md`, `kms_secrets.md`) —
   network calls only, no kms file is used, so mycache and kms can run on **different
   machines**: set `KMS_URL` and `KMS_APPROLE_DIR` in `.env`.
