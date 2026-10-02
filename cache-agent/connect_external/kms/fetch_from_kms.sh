@@ -1,15 +1,18 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# kms_secrets.sh — how the cache-agent reads its secrets from kms (sourced)
+# fetch_from_kms.sh — how the cache-agent reads its secrets from kms (sourced)
 #
 # Used by     cache-agent/host_start.sh — you do not run it yourself
 #
-# Use         source connect_external/kms/kms_secrets.sh
+# Use         source connect_external/kms/fetch_from_kms.sh
 #             kms_get mycache-cache-agent shared/anthropic ANTHROPIC_API_KEY || exit 1
 #             kms_get mycache-cache-agent mycache/redis REDIS_PASSWORD || exit 1
 #
 # Calls       health → AppRole login (1-hour token) → read → token revoked
 #
 # Result      each KEY exported — in memory only, never printed, never a file
+#
+# First time  not signed up yet + run by hand in a terminal → signs up ONCE by itself (kms
+#             owner's password). In startup / no terminal → a clear message, no question.
 #
 # Errors      sealed / down / no access / key missing → clear message, return 1
 #
@@ -34,8 +37,17 @@ kms_get() {
         501) echo "[ERROR] kms is not initialised yet" >&2; return 1 ;;
         *)   echo "[ERROR] kms is not reachable at $url (health ${code:-none})" >&2; return 1 ;;
     esac
-    [ -r "$d/role_id" ] && [ -r "$d/secret_id" ] \
-        || { echo "[ERROR] no kms login files for $role in $d — register first: bash cache-agent/connect_external/kms/register_to_kms.sh" >&2; return 1; }
+    # Not signed up yet → sign up ONCE right here (asks the kms owner's password) — but only when
+    # run by hand in a terminal: never inside startup / shutdown (SVC_RUN is set by the workspace's
+    # svcmgt), never without a terminal. KMS_AUTO_REGISTER=1 forces it (tests).
+    if [ ! -r "$d/role_id" ] || [ ! -r "$d/secret_id" ]; then
+        if [ -z "${SVC_RUN:-}" ] && { [ -t 0 ] || [ "${KMS_AUTO_REGISTER:-}" = 1 ]; }; then
+            echo "[INFO] $role is not signed up with kms yet — signing up once (kms owner's password)" >&2
+            KMS_APPROLE_DIR="$adir" bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/signup_with_kms.sh" >&2 || return 1
+        else
+            echo "[ERROR] $role is not signed up with kms yet — run this component's start by hand once (it asks the kms password), or: bash cache-agent/connect_external/kms/signup_with_kms.sh" >&2; return 1
+        fi
+    fi
 
     tok="$(python3 -c 'import sys,json; print(json.dumps({"role_id":open(sys.argv[1]).read().strip(),"secret_id":open(sys.argv[2]).read().strip()}))' \
             "$d/role_id" "$d/secret_id" \

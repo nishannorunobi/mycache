@@ -1,12 +1,12 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────────────────
-# add_secret_to_kms.sh — a NEW secret of the mycache Redis server → kms
+# add_new_secret_to_kms.sh — a NEW secret of the mycache Redis server → kms
 #
 # What for    A new password / key / token goes into kms — never into .env.
 #
 # Who         The kms owner (needs the kms password). mycache itself can only read.
 #
-# How         bash connect_external/kms/add_secret_to_kms.sh NEW_API_KEY
+# How         bash connect_external/kms/add_new_secret_to_kms.sh NEW_API_KEY
 #
 # Output      kms password for nishan (hidden): ********
 #             Value for NEW_API_KEY (hidden): ********
@@ -28,7 +28,7 @@ OWNER="${KMS_OWNER:-nishan}"
 KPATH="mycache/redis"                                 # the Redis server's own place in kms
 
 KEY="${1:-}"
-[[ "$KEY" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { echo "usage: add_secret_to_kms.sh <KEY>   (letters, digits, _)" >&2; exit 2; }
+[[ "$KEY" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { echo "usage: add_new_secret_to_kms.sh <KEY>   (letters, digits, _)" >&2; exit 2; }
 h="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$URL/v1/sys/health")"
 [ "$h" = 200 ] || { echo "[ERROR] kms at $URL is not running + unsealed (health ${h:-none})" >&2; exit 1; }
 

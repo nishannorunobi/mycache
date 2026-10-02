@@ -1,12 +1,12 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────────────────
-# add_secret_to_kms.sh — a NEW secret of the cache-agent → kms
+# add_new_secret_to_kms.sh — a NEW secret of the cache-agent → kms
 #
 # What for    A new password / key / token for the agent goes into kms — never into agent.conf.
 #
 # Who         The kms owner (needs the kms password). The agent itself can only read.
 #
-# How         bash cache-agent/connect_external/kms/add_secret_to_kms.sh NEW_AGENT_KEY
+# How         bash cache-agent/connect_external/kms/add_new_secret_to_kms.sh NEW_AGENT_KEY
 #
 # Output      kms password for nishan (hidden): ********
 #             Value for NEW_AGENT_KEY (hidden): ********
@@ -29,7 +29,7 @@ OWNER="${KMS_OWNER:-nishan}"
 KPATH="mycache/cache-agent"                           # the agent's own place in kms
 
 KEY="${1:-}"
-[[ "$KEY" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { echo "usage: add_secret_to_kms.sh <KEY>   (letters, digits, _)" >&2; exit 2; }
+[[ "$KEY" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { echo "usage: add_new_secret_to_kms.sh <KEY>   (letters, digits, _)" >&2; exit 2; }
 h="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$URL/v1/sys/health")"
 [ "$h" = 200 ] || { echo "[ERROR] kms at $URL is not running + unsealed (health ${h:-none})" >&2; exit 1; }
 

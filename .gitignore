@@ -3,8 +3,7 @@
 # Logs
 *.log
 
-# secrets — kept on disk, never in git (CLAUDEWORK-14)
-/.env
+# .env holds NO secret (they are in kms) — it is tracked in git
 
-# kms login files (role_id / secret_id) — written by connect_external/kms/register_to_kms.sh
+# kms login files (role_id / secret_id) — written by connect_external/kms/signup_with_kms.sh
 connect_external/kms/credentials/

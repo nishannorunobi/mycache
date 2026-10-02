@@ -1,7 +1,6 @@
 
 
-# Secrets
-agent.conf
+# agent.conf holds NO secret (they are in kms) — it is tracked in git
 
 # Python
 __pycache__/
@@ -18,5 +17,5 @@ venv/
 *.log
 memory/*.log
 
-# kms login files — written by connect_external/kms/register_to_kms.sh
+# kms login files — written by connect_external/kms/signup_with_kms.sh
 connect_external/kms/credentials/

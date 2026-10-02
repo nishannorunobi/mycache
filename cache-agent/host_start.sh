@@ -16,7 +16,7 @@
 # Output      [OK] Cache agent running on :8892
 #
 # Errors      kms is SEALED          → unseal kms, run again
-#             no kms login files     → bash cache-agent/connect_external/kms/register_to_kms.sh
+#             no kms login files     → bash cache-agent/connect_external/kms/signup_with_kms.sh
 #             container not running   → bash start.sh
 #
 # Next        bash cache-agent/host_status.sh  ·  bash cache-agent/host_stop.sh
@@ -54,12 +54,12 @@ CONTAINER="mycache-redis"
 AGENT_DIR="/cache-agent"
 
 # The agent's secrets come from kms over its HTTP API (story KMS [1.4]) — the agent's OWN client
-# connect_external/kms/kms_secrets.sh and its own login (mycache-cache-agent); no file of kms or of
+# connect_external/kms/fetch_from_kms.sh and its own login (mycache-cache-agent); no file of kms or of
 # the Redis server is used. In memory only, handed to the agent by NAME (docker exec -e …): the
 # values never appear on a command line. kms sealed / down → stop here.
 # where kms is: the agent's own settings (only the KMS_* lines of agent.conf)
 [ -f "$SCRIPT_DIR/agent.conf" ] && source <(grep -E '^KMS_(URL|APPROLE_DIR)=' "$SCRIPT_DIR/agent.conf")
-source "$SCRIPT_DIR/connect_external/kms/kms_secrets.sh"
+source "$SCRIPT_DIR/connect_external/kms/fetch_from_kms.sh"
 kms_get mycache-cache-agent shared/anthropic ANTHROPIC_API_KEY || exit 1
 kms_get mycache-cache-agent mycache/redis REDIS_PASSWORD || exit 1
 

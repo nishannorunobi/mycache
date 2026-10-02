@@ -1,29 +1,29 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────────────────
-# register_to_kms.sh — sign the mycache Redis server up with kms (once)
+# signup_with_kms.sh — sign the cache-agent up with kms (once)
 #
-# What for    mycache needs kms. Before it can read its password it needs its own kms login.
+# What for    The agent is its own component: it needs its own kms login.
 #
 # Who         The kms owner (asks the kms password). Re-running is safe — nothing changes.
 #
-# How         bash connect_external/kms/register_to_kms.sh
+# How         bash cache-agent/connect_external/kms/signup_with_kms.sh
 #
 # Steps       1. log in to kms as the owner
-#             2. policy + AppRole mycache-redis → may READ kv/mycache/redis only
-#             3. login files → credentials/mycache-redis/ (git-ignored, 600)
-#             4. first time: copy REDIS_PASSWORD from .env into kms
+#             2. policy + AppRole mycache-cache-agent → may READ:
+#                kv/mycache/cache-agent · kv/mycache/redis · kv/shared/anthropic
+#             3. login files → credentials/mycache-cache-agent/ (git-ignored, 600)
+#             4. first time: copy ANTHROPIC_API_KEY from agent.conf into kms
 #
-# Output      [  OK  ] mycache-redis — may read: mycache/redis · new login
-#             [  OK  ] mycache (Redis server) registered with kms
+# Output      [  OK  ] cache-agent registered with kms
 #
-# Next        bash start.sh
+# Next        bash cache-agent/host_start.sh
 # ─────────────────────────────────────────────────────────────────────────────
 case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} n==1{ sub(/^# ?/,""); if(!t){printf "\033[1m%s\033[0m\n",$0; t=1; next} l=substr($0,1,12); if(l ~ /^[A-Z][A-Za-z ]+$/){c=(l ~ /^Errors/)?"\033[33m":"\033[36m"; printf "%s%s\033[0m%s\n",c,l,substr($0,13)} else print }' "$0"; exit 0 ;; esac
 
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MYCACHE="$(cd "$HERE/../.." && pwd)"
-ENV_FILE="${REG_ENV_FILE:-$MYCACHE/.env}"                       # REG_*: tests point elsewhere
+AGENT="$(cd "$HERE/../.." && pwd)"
+ENV_FILE="${REG_AGENT_CONF:-$AGENT/agent.conf}"                 # REG_*: tests point elsewhere
 [ -f "$ENV_FILE" ] && source <(grep -E '^KMS_(URL|APPROLE_DIR)=' "$ENV_FILE")
 URL="${KMS_URL:-http://127.0.0.1:8110}"
 CRED="${KMS_APPROLE_DIR:-}"; [ -n "$CRED" ] || CRED="$HERE/credentials"
@@ -32,11 +32,11 @@ OWNER="${KMS_OWNER:-nishan}"
 
 # what mycache needs from kms: part → kv paths it may read
 declare -A READS=(
-    [redis]="mycache/redis"
+    [cache-agent]="mycache/cache-agent mycache/redis shared/anthropic"
 )
 # secrets to copy into kms the first time: kv path · key · local file
 MOVES=(
-    "mycache/redis REDIS_PASSWORD $ENV_FILE"
+    "shared/anthropic ANTHROPIC_API_KEY $ENV_FILE"
 )
 
 ok()  { echo -e "\033[32m[  OK  ]\033[0m $*"; }
@@ -115,4 +115,4 @@ cur=json.loads(sys.stdin.readline()); cur[sys.argv[1]]=sys.stdin.read(); print(j
         || { unset val; bad "could not store $key"; exit 1; }
     unset val
 done
-ok "mycache (Redis server) registered with kms — start it: bash start.sh"
+ok "cache-agent registered with kms — start it: bash cache-agent/host_start.sh"

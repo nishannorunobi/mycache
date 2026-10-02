@@ -20,9 +20,9 @@ system, OpenBao) and are fetched over its HTTP API every time mycache starts.
 | `REDIS_PASSWORD` | cache-agent | kms `kv/mycache/redis` | `cache-agent/host_start.sh` (its own kms login) |
 | `ANTHROPIC_API_KEY` | cache-agent | kms `kv/shared/anthropic` | `cache-agent/host_start.sh` |
 
-- `.env` holds only non-secret settings (version, host, port). A comment there points here.
-- **New secret?** Never into a config file: `bash connect_external/kms/add_secret_to_kms.sh <KEY>`
-  (cache-agent: `bash cache-agent/connect_external/kms/add_secret_to_kms.sh <KEY>`), then read it
+- `.env` holds only settings (version, host, port, `KMS_URL`) — it is in git on purpose. A comment there points here.
+- **New secret?** Never into a config file: `bash connect_external/kms/add_new_secret_to_kms.sh <KEY>`
+  (cache-agent: `bash cache-agent/connect_external/kms/add_new_secret_to_kms.sh <KEY>`), then read it
   in the start script with `kms_get`.
 - **See / change a secret:** kms UI http://127.0.0.1:8110/ui → Method *Username* (owner
   login) → *Secrets engines* → `kv` → `mycache` → `redis`. Or `bash
@@ -33,8 +33,8 @@ system, OpenBao) and are fetched over its HTTP API every time mycache starts.
 - **kms sealed** → `start.sh` stops with *"kms is SEALED"*: unseal it (startup prompt or the
   kms UI), then start again. A Redis that is already running keeps working.
 - **First time:** each component signs itself up with kms (once, asks the kms owner's password):
-  Redis server `bash connect_external/kms/register_to_kms.sh` ·
-  cache-agent `bash cache-agent/connect_external/kms/register_to_kms.sh`
+  Redis server `bash connect_external/kms/signup_with_kms.sh` ·
+  cache-agent `bash cache-agent/connect_external/kms/signup_with_kms.sh`
 - **Every script explains itself:** `bash <script> --help` (or read its header).
 - How mycache talks to kms: [`connect_external/kms/`](connect_external/kms/) —
   network calls only, no kms file is used, so mycache and kms can run on **different

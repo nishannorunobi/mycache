@@ -65,13 +65,9 @@ info "Installing dependencies..."
 .venv/bin/pip install --quiet -r requirements.txt
 success "Dependencies installed."
 
-# ── Create agent.conf if missing ──────────────────────────────────────────────
-if [ ! -f "agent.conf" ]; then
-    cp agent.conf.example agent.conf
-    success "agent.conf created (no secrets — they come from kms at start)."
-else
-    success "agent.conf exists."
-fi
+# ── agent.conf is in git (no secrets — they come from kms at start) ────────────
+if [ -f "agent.conf" ]; then success "agent.conf present (settings only — secrets come from kms)."
+else printf '\n\033[31m[ERROR]\033[0m agent.conf missing — restore it: git checkout cache-agent/agent.conf\n'; fi
 
 # ── Create memory directory ───────────────────────────────────────────────────
 mkdir -p memory

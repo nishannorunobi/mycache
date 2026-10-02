@@ -17,7 +17,7 @@
 #                 Password  : in kms (kv/mycache/redis)
 #
 # Errors      kms is SEALED          → unseal kms, run again
-#             no kms login files     → bash connect_external/kms/register_to_kms.sh
+#             no kms login files     → bash connect_external/kms/signup_with_kms.sh
 #
 # Next        bash status.sh  ·  bash stop.sh
 # ─────────────────────────────────────────────────────────────────────────────
@@ -43,9 +43,9 @@ GREEN="\033[32m"; YELLOW="\033[33m"; BOLD="\033[1m"; RESET="\033[0m"
 source .env      # non-secret settings only: version, host, port, KMS_URL, KMS_APPROLE_DIR
 
 # The password comes from kms over its HTTP API (story KMS [1.4]) — mycache's own client
-# connect_external/kms/kms_secrets.sh, no kms file used. Kept in memory, never printed, never a file.
+# connect_external/kms/fetch_from_kms.sh, no kms file used. Kept in memory, never printed, never a file.
 # kms sealed / down → stop here: no fallback to a secret file.
-source "$SCRIPT_DIR/connect_external/kms/kms_secrets.sh"
+source "$SCRIPT_DIR/connect_external/kms/fetch_from_kms.sh"
 kms_get mycache-redis mycache/redis REDIS_PASSWORD || exit 1
 
 # --no-ui starts the broker only, leaving redis-commander (mycache-redis-ui) down.
