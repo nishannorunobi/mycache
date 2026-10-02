@@ -23,10 +23,11 @@ kms_get() {
     local role="${1:-}" path="${2:-}"; shift 2 2>/dev/null || true
     [ -n "$role" ] && [ -n "$path" ] && [ $# -gt 0 ] \
         || { echo "[ERROR] usage: kms_get <approle> <kv path> <KEY>…" >&2; return 1; }
-    local url="${KMS_URL:-http://127.0.0.1:8110}" ws d code tok body k v
+    local url="${KMS_URL:-http://127.0.0.1:8110}" ws d code tok body k v adir
     ws="$(d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; while [ ! -d "$d/mountspace" ] && [ "$d" != "/" ]; do d="$(dirname "$d")"; done; echo "$d")"
-    [ -n "${KMS_APPROLE_DIR:-}" ] || KMS_APPROLE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/credentials"
-    d="$KMS_APPROLE_DIR/$role"
+    # this client's own login-file folder (local: never changes the caller's KMS_APPROLE_DIR)
+    adir="${KMS_APPROLE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/credentials}"
+    d="$adir/$role"
 
     code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$url/v1/sys/health" 2>/dev/null)"
     case "$code" in
