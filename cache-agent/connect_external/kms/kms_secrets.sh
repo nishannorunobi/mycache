@@ -1,6 +1,6 @@
-# connect_external/kms/kms_secrets.sh — the mycache Redis server's OWN client for kms (sourced by
-# start.sh). The cache-agent has its own: cache-agent/connect_external/kms/.
-# mycache uses no file of the kms project: it only makes network calls to the kms HTTP API.
+# cache-agent/connect_external/kms/kms_secrets.sh — the cache-agent's OWN client for kms (sourced by
+# host_start.sh). connect_external/ = one folder per external component the agent talks to.
+# The agent uses no file of the kms project (nor of the Redis server): network calls to kms only.
 #     source kms_secrets.sh
 #     kms_get <approle> <kv path> <KEY>…      e.g.  kms_get mycache-redis mycache/redis REDIS_PASSWORD
 # The contract with kms (see kms's README, "API contract"):
@@ -33,7 +33,7 @@ kms_get() {
         *)   echo "[ERROR] kms is not reachable at $url (health ${code:-none})" >&2; return 1 ;;
     esac
     [ -r "$d/role_id" ] && [ -r "$d/secret_id" ] \
-        || { echo "[ERROR] no kms login files for $role in $d — register first: bash connect_external/kms/register_to_kms.sh" >&2; return 1; }
+        || { echo "[ERROR] no kms login files for $role in $d — register first: bash cache-agent/connect_external/kms/register_to_kms.sh" >&2; return 1; }
 
     tok="$(python3 -c 'import sys,json; print(json.dumps({"role_id":open(sys.argv[1]).read().strip(),"secret_id":open(sys.argv[2]).read().strip()}))' \
             "$d/role_id" "$d/secret_id" \

@@ -1,4 +1,6 @@
-# connect_external/kms — mycache ↔ kms
+# connect_external/kms — mycache Redis server ↔ kms
+
+(The cache-agent is a separate component with its own folder: `cache-agent/connect_external/kms/`.)
 
 mycache **needs** kms (its secrets live there); kms does not need mycache. Everything here talks
 to kms over its **HTTP API** — no kms file is used, so mycache and kms can run on different machines.
@@ -17,15 +19,11 @@ connect_external/kms/
 bash connect_external/kms/register_to_kms.sh
 ```
 1. logs in to kms as the owner (password hidden)
-2. creates, per mycache part, a **read-only policy** + an **AppRole** (a login for machines):
-
-   | AppRole | may read | used by |
-   |---|---|---|
-   | `mycache-redis` | `kv/mycache/redis` | `start.sh` → REDIS_PASSWORD |
-   | `mycache-cache-agent` | `kv/mycache/cache-agent`, `kv/shared/anthropic` | `cache-agent/host_start.sh` → ANTHROPIC_API_KEY |
-3. writes `credentials/<approle>/{role_id,secret_id}` (like a username + password)
-4. first time only: copies `REDIS_PASSWORD` (from `.env`) and `ANTHROPIC_API_KEY` (from
-   `cache-agent/agent.conf`) into kms if kms has none yet. Re-running changes nothing.
+2. creates a **read-only policy** + an **AppRole** (a login for machines): `mycache-redis`
+   may read `kv/mycache/redis` — used by `start.sh` → REDIS_PASSWORD
+3. writes `credentials/mycache-redis/{role_id,secret_id}` (like a username + password)
+4. first time only: copies `REDIS_PASSWORD` from `.env` into kms if kms has none yet.
+   Re-running changes nothing.
 
 ## 2. Every start — the API contract
 

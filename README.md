@@ -16,7 +16,8 @@ system, OpenBao) and are fetched over its HTTP API every time mycache starts.
 
 | Secret | Used by | Where it lives | Fetched by |
 |---|---|---|---|
-| `REDIS_PASSWORD` | Redis, redis-commander, cache-agent | kms `kv/mycache/redis` | `start.sh` → container env |
+| `REDIS_PASSWORD` | Redis server, redis-commander | kms `kv/mycache/redis` | `start.sh` → container env |
+| `REDIS_PASSWORD` | cache-agent | kms `kv/mycache/redis` | `cache-agent/host_start.sh` (its own kms login) |
 | `ANTHROPIC_API_KEY` | cache-agent | kms `kv/shared/anthropic` | `cache-agent/host_start.sh` |
 
 - `.env` holds only non-secret settings (version, host, port). A comment there points here.
@@ -28,8 +29,9 @@ system, OpenBao) and are fetched over its HTTP API every time mycache starts.
   never `-a <password>` (it shows in the process list).
 - **kms sealed** → `start.sh` stops with *"kms is SEALED"*: unseal it (startup prompt or the
   kms UI), then start again. A Redis that is already running keeps working.
-- **First time:** sign mycache up with kms (once, asks the kms owner's password):
-  `bash connect_external/kms/register_to_kms.sh`
+- **First time:** each component signs itself up with kms (once, asks the kms owner's password):
+  Redis server `bash connect_external/kms/register_to_kms.sh` ·
+  cache-agent `bash cache-agent/connect_external/kms/register_to_kms.sh`
 - How mycache talks to kms: [`connect_external/kms/`](connect_external/kms/README.md) —
   network calls only, no kms file is used, so mycache and kms can run on **different
   machines**: set `KMS_URL` and `KMS_APPROLE_DIR` in `.env`.

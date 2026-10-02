@@ -35,14 +35,15 @@ fi
 CONTAINER="mycache-redis"
 AGENT_DIR="/cache-agent"
 
-# The Anthropic key comes from kms over its HTTP API (story KMS [1.4]) — mycache's own client
-# ../connect_external/kms/kms_secrets.sh, no kms file used. In memory only, handed to the agent by NAME
-# (docker exec -e ANTHROPIC_API_KEY): the value never appears on a command line.
-# REDIS_PASSWORD is already in the container's environment. kms sealed / down → stop here.
-# where kms is: mycache's own settings (only the KMS_* lines of ../.env — kms may be on another machine)
-[ -f "$SCRIPT_DIR/../.env" ] && source <(grep -E '^KMS_(URL|APPROLE_DIR)=' "$SCRIPT_DIR/../.env")
-source "$SCRIPT_DIR/../connect_external/kms/kms_secrets.sh"
+# The agent's secrets come from kms over its HTTP API (story KMS [1.4]) — the agent's OWN client
+# connect_external/kms/kms_secrets.sh and its own login (mycache-cache-agent); no file of kms or of
+# the Redis server is used. In memory only, handed to the agent by NAME (docker exec -e …): the
+# values never appear on a command line. kms sealed / down → stop here.
+# where kms is: the agent's own settings (only the KMS_* lines of agent.conf)
+[ -f "$SCRIPT_DIR/agent.conf" ] && source <(grep -E '^KMS_(URL|APPROLE_DIR)=' "$SCRIPT_DIR/agent.conf")
+source "$SCRIPT_DIR/connect_external/kms/kms_secrets.sh"
 kms_get mycache-cache-agent shared/anthropic ANTHROPIC_API_KEY || exit 1
+kms_get mycache-cache-agent mycache/redis REDIS_PASSWORD || exit 1
 
 if ! docker inspect "$CONTAINER" --format '{{.State.Running}}' 2>/dev/null | grep -q true; then
     echo "[ERROR] Container $CONTAINER is not running." >&2
@@ -66,7 +67,7 @@ docker exec "$CONTAINER" sh -c \
 # Start fresh; route logs to mountspace on the host via nohup+disown.
 mkdir -p "$(dirname "$LOG_FILE")"
 touch "$LOG_FILE" 2>/dev/null || true   # create if possible; never abort
-docker exec -e ANTHROPIC_API_KEY "$CONTAINER" sh -c \
+docker exec -e ANTHROPIC_API_KEY -e REDIS_PASSWORD "$CONTAINER" sh -c \
     "cd $AGENT_DIR && . ./agent.conf && \
      .venv/bin/uvicorn server:app \
         --host 0.0.0.0 --port \${PORT:-8892} \
