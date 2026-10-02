@@ -28,6 +28,8 @@ system, OpenBao) and are fetched over its HTTP API every time mycache starts.
   never `-a <password>` (it shows in the process list).
 - **kms sealed** → `start.sh` stops with *"kms is SEALED"*: unseal it (startup prompt or the
   kms UI), then start again. A Redis that is already running keeps working.
+- **First time:** sign mycache up with kms (once, asks the kms owner's password):
+  `bash connect_external/kms/register_to_kms.sh`
 - How mycache talks to kms: [`connect_external/kms/`](connect_external/kms/README.md) —
   network calls only, no kms file is used, so mycache and kms can run on **different
   machines**: set `KMS_URL` and `KMS_APPROLE_DIR` in `.env`.

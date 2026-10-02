@@ -5,3 +5,6 @@
 
 # secrets — kept on disk, never in git (CLAUDEWORK-14)
 /.env
+
+# kms login files (role_id / secret_id) — written by connect_external/kms/register_to_kms.sh
+connect_external/kms/credentials/

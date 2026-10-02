@@ -11,8 +11,7 @@
 # Where kms is and where the login files are come from mycache's own settings (.env), because
 # mycache and kms may run on DIFFERENT machines:
 #   KMS_URL          default http://127.0.0.1:8110 (kms on this PC)
-#   KMS_APPROLE_DIR  default <workspace>/mountspace/secrets/kms/approle; on another machine:
-#                    the folder the owner copied <approle>/{role_id,secret_id} into (600)
+#   KMS_APPROLE_DIR  default connect_external/kms/credentials (written by register_to_kms.sh)
 # Exports each KEY (value only in memory, nothing printed). kms sealed / down / no access /
 # key missing → clear error, return 1, nothing exported — no fallback to a secret file.
 # Secrets never become process arguments (bodies via stdin, token via a file descriptor).
@@ -23,7 +22,7 @@ kms_get() {
         || { echo "[ERROR] usage: kms_get <approle> <kv path> <KEY>…" >&2; return 1; }
     local url="${KMS_URL:-http://127.0.0.1:8110}" ws d code tok body k v
     ws="$(d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; while [ ! -d "$d/mountspace" ] && [ "$d" != "/" ]; do d="$(dirname "$d")"; done; echo "$d")"
-    [ -n "${KMS_APPROLE_DIR:-}" ] || KMS_APPROLE_DIR="$ws/mountspace/secrets/kms/approle"
+    [ -n "${KMS_APPROLE_DIR:-}" ] || KMS_APPROLE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/credentials"
     d="$KMS_APPROLE_DIR/$role"
 
     code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$url/v1/sys/health" 2>/dev/null)"
@@ -34,7 +33,7 @@ kms_get() {
         *)   echo "[ERROR] kms is not reachable at $url (health ${code:-none})" >&2; return 1 ;;
     esac
     [ -r "$d/role_id" ] && [ -r "$d/secret_id" ] \
-        || { echo "[ERROR] no kms login files for $role in $d — the owner adds mycache to kms first" >&2; return 1; }
+        || { echo "[ERROR] no kms login files for $role in $d — register first: bash connect_external/kms/register_to_kms.sh" >&2; return 1; }
 
     tok="$(python3 -c 'import sys,json; print(json.dumps({"role_id":open(sys.argv[1]).read().strip(),"secret_id":open(sys.argv[2]).read().strip()}))' \
             "$d/role_id" "$d/secret_id" \
