@@ -21,6 +21,9 @@ system, OpenBao) and are fetched over its HTTP API every time mycache starts.
 | `ANTHROPIC_API_KEY` | cache-agent | kms `kv/shared/anthropic` | `cache-agent/host_start.sh` |
 
 - `.env` holds only non-secret settings (version, host, port). A comment there points here.
+- **New secret?** Never into a config file: `bash connect_external/kms/add_secret_to_kms.sh <KEY>`
+  (cache-agent: `bash cache-agent/connect_external/kms/add_secret_to_kms.sh <KEY>`), then read it
+  in the start script with `kms_get`.
 - **See / change a secret:** kms UI http://127.0.0.1:8110/ui → Method *Username* (owner
   login) → *Secrets engines* → `kv` → `mycache` → `redis`. Or `bash
   projectspace/kms/set_secret.sh mycache/redis REDIS_PASSWORD` (hidden input).

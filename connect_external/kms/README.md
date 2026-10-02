@@ -8,6 +8,7 @@ to kms over its **HTTP API** — no kms file is used, so mycache and kms can run
 ```
 connect_external/kms/
 ├── register_to_kms.sh   sign mycache up with kms — ONCE (asks the kms owner's password)
+├── add_secret_to_kms.sh a NEW secret → kms (never a config file): add_secret_to_kms.sh <KEY>
 ├── kms_secrets.sh       the client start.sh / cache-agent use at every start (kms_get)
 ├── credentials/         mycache's login files, written by register (git-ignored, 700/600)
 └── README.md

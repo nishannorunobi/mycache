@@ -3,6 +3,7 @@
 ```
 cache-agent/connect_external/kms/
 ├── register_to_kms.sh   sign the agent up with kms — ONCE (asks the kms owner's password)
+├── add_secret_to_kms.sh a NEW agent secret → kms (never agent.conf): add_secret_to_kms.sh <KEY>
 ├── kms_secrets.sh       the client host_start.sh uses at every start (kms_get)
 ├── credentials/         the agent's login files (git-ignored, 700/600)
 └── README.md
