@@ -1,8 +1,22 @@
 #!/bin/bash
-# ensure_running.sh — start Redis only if it is not up: calls the project's own start.sh
-# (unchanged; same arguments, e.g. --no-ui) when needed, then checks it really runs.
-# Safe to run any number of times. Standalone.
-#   bash ensure_running.sh [--no-ui]
+# ─────────────────────────────────────────────────────────────────────────────
+# ensure_running.sh — start mycache only if it is not running
+#
+# What for    Safe to run any number of times.
+#
+# Who         The workspace startup (svcmgt).
+#
+# How         bash ensure_running.sh [--no-ui]
+#
+# Steps       1. running already → says so
+#             2. otherwise → start.sh (same arguments), then checks it runs
+#
+# Output      [  OK  ] Redis running
+#
+# Errors      the same as start.sh (e.g. kms sealed)
+# ─────────────────────────────────────────────────────────────────────────────
+case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} n==1{ sub(/^# ?/,""); if(!t){printf "\033[1m%s\033[0m\n",$0; t=1; next} l=substr($0,1,12); if(l ~ /^[A-Z][A-Za-z ]+$/){c=(l ~ /^Errors/)?"\033[33m":"\033[36m"; printf "%s%s\033[0m%s\n",c,l,substr($0,13)} else print }' "$0"; exit 0 ;; esac
+
 set -uo pipefail
 
 # ── Mirror logging ─────────────────────────────────────────────────────────────

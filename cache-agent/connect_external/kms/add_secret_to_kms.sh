@@ -1,14 +1,25 @@
 #!/bin/bash
-# cache-agent/connect_external/kms/add_secret_to_kms.sh — store a NEW (or changed) secret of the
-# CACHE-AGENT in kms, instead of writing it into a config file.
-#     bash cache-agent/connect_external/kms/add_secret_to_kms.sh <KEY>     e.g.  … NEW_API_KEY
-# Asks for the kms owner's password, then the value (both hidden). Stores it in kv/mycache/cache-agent
-# next to the keys already there (they are kept). Nothing is printed except the version number.
-# Then read it in host_start.sh like the others:  kms_get mycache-cache-agent mycache/cache-agent <KEY>
-# (mycache-cache-agent may already read kv/mycache/cache-agent — no new sign-up needed.)
-# Shared keys (kv/shared/…) are not the agent's own — they are not written here.
-# Over the kms HTTP API only — no kms file is used. NO mirror logging on purpose.
-# Exit 0 = stored; 1 = failed, nothing changed.
+# ─────────────────────────────────────────────────────────────────────────────
+# add_secret_to_kms.sh — a NEW secret of the cache-agent → kms
+#
+# What for    A new password / key / token for the agent goes into kms — never into agent.conf.
+#
+# Who         The kms owner (needs the kms password). The agent itself can only read.
+#
+# How         bash cache-agent/connect_external/kms/add_secret_to_kms.sh NEW_AGENT_KEY
+#
+# Output      kms password for nishan (hidden): ********
+#             Value for NEW_AGENT_KEY (hidden): ********
+#             [  OK  ] kv/mycache/cache-agent  NEW_AGENT_KEY stored (version 1)
+#
+# Note        Stored in the agent's own place kv/mycache/cache-agent. Shared keys are not written here.
+#
+# Next        use it in host_start.sh:
+#             kms_get mycache-cache-agent mycache/cache-agent NEW_AGENT_KEY || exit 1
+#             then hand it over by name: docker exec -e NEW_AGENT_KEY …
+# ─────────────────────────────────────────────────────────────────────────────
+case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} n==1{ sub(/^# ?/,""); if(!t){printf "\033[1m%s\033[0m\n",$0; t=1; next} l=substr($0,1,12); if(l ~ /^[A-Z][A-Za-z ]+$/){c=(l ~ /^Errors/)?"\033[33m":"\033[36m"; printf "%s%s\033[0m%s\n",c,l,substr($0,13)} else print }' "$0"; exit 0 ;; esac
+
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${REG_AGENT_CONF:-$(cd "$HERE/../.." && pwd)/agent.conf}"

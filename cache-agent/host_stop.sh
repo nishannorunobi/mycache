@@ -1,8 +1,15 @@
 #!/bin/bash
-# host_stop.sh — stop the cache-agent (Cache agent) inside mycache-redis, from the HOST.
-# Idempotent: nothing to do when the container or the agent is not running. Standalone
-# (moved here from agents/docker-manager-agent/cacheagent/stop-cache-agent.sh, 2026-09-29).
-#   bash host_stop.sh
+# ─────────────────────────────────────────────────────────────────────────────
+# host_stop.sh — stop the cache-agent, from the host
+#
+# Who         You.
+#
+# How         bash cache-agent/host_stop.sh
+#
+# Note        Nothing to do if the agent or the container is not running.
+# ─────────────────────────────────────────────────────────────────────────────
+case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} n==1{ sub(/^# ?/,""); if(!t){printf "\033[1m%s\033[0m\n",$0; t=1; next} l=substr($0,1,12); if(l ~ /^[A-Z][A-Za-z ]+$/){c=(l ~ /^Errors/)?"\033[33m":"\033[36m"; printf "%s%s\033[0m%s\n",c,l,substr($0,13)} else print }' "$0"; exit 0 ;; esac
+
 set -euo pipefail
 
 # ── Mirror logging ─────────────────────────────────────────────────────────────
@@ -21,7 +28,6 @@ if [ -f "$_WS_ROOT/init/create_logging_path.sh" ]; then
     echo "[logging] → $LOG_FILE"
 fi
 # ──────────────────────────────────────────────────────────────────────────────
-# Standalone (no workspace → no mirror log): keep the agent's output next to it.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_FILE="${LOG_FILE:-$SCRIPT_DIR/memory/host_start.log}"
 mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true

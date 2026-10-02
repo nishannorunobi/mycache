@@ -1,6 +1,17 @@
 #!/bin/sh
-# start.sh — Start the Cache Agent HTTP server inside mycache-redis container.
-# Run INSIDE the container. Starts uvicorn on PORT (default 8892).
+# ─────────────────────────────────────────────────────────────────────────────
+# start.sh — start the agent's web server (runs INSIDE the container)
+#
+# Who         host_start.sh — you normally do not run it yourself.
+#
+# How         (inside the container)  sh /cache-agent/start.sh
+#
+# Needs       ANTHROPIC_API_KEY in the environment — handed over by host_start.sh from kms
+#
+# Errors      ANTHROPIC_API_KEY not set → start it from the host: bash cache-agent/host_start.sh
+# ─────────────────────────────────────────────────────────────────────────────
+case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} n==1{ sub(/^# ?/,""); if(!t){printf "\033[1m%s\033[0m\n",$0; t=1; next} l=substr($0,1,12); if(l ~ /^[A-Z][A-Za-z ]+$/){c=(l ~ /^Errors/)?"\033[33m":"\033[36m"; printf "%s%s\033[0m%s\n",c,l,substr($0,13)} else print }' "$0"; exit 0 ;; esac
+
 set -eu
 
 # ── Mirror logging — POSIX sh: no BASH_SOURCE, no process substitution ────────

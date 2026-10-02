@@ -1,16 +1,25 @@
 #!/bin/bash
-# connect_external/kms/register_to_kms.sh — sign the mycache Redis SERVER up with kms. Run once;
-# re-running is safe. (The cache-agent is a separate component: cache-agent/connect_external/kms/.)
-#     bash connect_external/kms/register_to_kms.sh        (asks for the kms owner's password)
-# mycache needs kms; kms does not need mycache — so mycache registers itself, over the kms
-# HTTP API only (no kms file is used). With the owner's login it:
-#   1. creates a read-only policy + an AppRole (login): mycache-redis may read kv/mycache/redis
-#   2. writes its login files into credentials/mycache-redis/{role_id,secret_id}
-#      (folders 700, files 600, git-ignored) — start.sh reads them from there
-#   3. first time only: copies REDIS_PASSWORD from ../../.env into kv/mycache/redis, if kms has none
-# Settings (mycache's .env): KMS_URL, KMS_APPROLE_DIR. Nothing secret is printed.
-# NO mirror logging on purpose: this script reads the owner's password.
-# Exit 0 = registered; 1 = failed.
+# ─────────────────────────────────────────────────────────────────────────────
+# register_to_kms.sh — sign the mycache Redis server up with kms (once)
+#
+# What for    mycache needs kms. Before it can read its password it needs its own kms login.
+#
+# Who         The kms owner (asks the kms password). Re-running is safe — nothing changes.
+#
+# How         bash connect_external/kms/register_to_kms.sh
+#
+# Steps       1. log in to kms as the owner
+#             2. policy + AppRole mycache-redis → may READ kv/mycache/redis only
+#             3. login files → credentials/mycache-redis/ (git-ignored, 600)
+#             4. first time: copy REDIS_PASSWORD from .env into kms
+#
+# Output      [  OK  ] mycache-redis — may read: mycache/redis · new login
+#             [  OK  ] mycache (Redis server) registered with kms
+#
+# Next        bash start.sh
+# ─────────────────────────────────────────────────────────────────────────────
+case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} n==1{ sub(/^# ?/,""); if(!t){printf "\033[1m%s\033[0m\n",$0; t=1; next} l=substr($0,1,12); if(l ~ /^[A-Z][A-Za-z ]+$/){c=(l ~ /^Errors/)?"\033[33m":"\033[36m"; printf "%s%s\033[0m%s\n",c,l,substr($0,13)} else print }' "$0"; exit 0 ;; esac
+
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MYCACHE="$(cd "$HERE/../.." && pwd)"

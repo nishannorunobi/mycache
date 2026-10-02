@@ -1,17 +1,25 @@
 #!/bin/bash
-# cache-agent/connect_external/kms/register_to_kms.sh — sign the CACHE-AGENT up with kms. Run once;
-# re-running is safe. The agent is its own component (the Redis server registers separately).
-#     bash cache-agent/connect_external/kms/register_to_kms.sh   (asks for the kms owner's password)
-# The agent needs kms; kms does not need the agent — so it registers itself, over the kms
-# HTTP API only (no kms file is used). With the owner's login it:
-#   1. creates a read-only policy + an AppRole (login): mycache-cache-agent may read
-#      kv/mycache/cache-agent (its own), kv/mycache/redis (to talk to Redis), kv/shared/anthropic
-#   2. writes its login files into credentials/mycache-cache-agent/{role_id,secret_id}
-#      (folders 700, files 600, git-ignored) — host_start.sh reads them from there
-#   3. first time only: copies ANTHROPIC_API_KEY from ../../agent.conf into kv/shared/anthropic
-# Settings (the agent's agent.conf): KMS_URL, KMS_APPROLE_DIR. Nothing secret is printed.
-# NO mirror logging on purpose: this script reads the owner's password.
-# Exit 0 = registered; 1 = failed.
+# ─────────────────────────────────────────────────────────────────────────────
+# register_to_kms.sh — sign the cache-agent up with kms (once)
+#
+# What for    The agent is its own component: it needs its own kms login.
+#
+# Who         The kms owner (asks the kms password). Re-running is safe — nothing changes.
+#
+# How         bash cache-agent/connect_external/kms/register_to_kms.sh
+#
+# Steps       1. log in to kms as the owner
+#             2. policy + AppRole mycache-cache-agent → may READ:
+#                kv/mycache/cache-agent · kv/mycache/redis · kv/shared/anthropic
+#             3. login files → credentials/mycache-cache-agent/ (git-ignored, 600)
+#             4. first time: copy ANTHROPIC_API_KEY from agent.conf into kms
+#
+# Output      [  OK  ] cache-agent registered with kms
+#
+# Next        bash cache-agent/host_start.sh
+# ─────────────────────────────────────────────────────────────────────────────
+case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} n==1{ sub(/^# ?/,""); if(!t){printf "\033[1m%s\033[0m\n",$0; t=1; next} l=substr($0,1,12); if(l ~ /^[A-Z][A-Za-z ]+$/){c=(l ~ /^Errors/)?"\033[33m":"\033[36m"; printf "%s%s\033[0m%s\n",c,l,substr($0,13)} else print }' "$0"; exit 0 ;; esac
+
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENT="$(cd "$HERE/../.." && pwd)"

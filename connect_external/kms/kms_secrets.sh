@@ -1,20 +1,23 @@
-# connect_external/kms/kms_secrets.sh — the mycache Redis server's OWN client for kms (sourced by
-# start.sh). The cache-agent has its own: cache-agent/connect_external/kms/.
-# mycache uses no file of the kms project: it only makes network calls to the kms HTTP API.
-#     source kms_secrets.sh
-#     kms_get <approle> <kv path> <KEY>…      e.g.  kms_get mycache-redis mycache/redis REDIS_PASSWORD
-# The contract with kms (see kms's README, "API contract"):
-#   GET  /v1/sys/health                   200 = unsealed · 503 = sealed · 501 = not initialised
-#   POST /v1/auth/approle/login           {role_id, secret_id} → 1-hour token
-#   GET  /v1/kv/data/<kv path>            header X-Vault-Token → {"data":{"data":{KEY: value}}}
-#   POST /v1/auth/token/revoke-self       the token is thrown away right after reading
-# Where kms is and where the login files are come from mycache's own settings (.env), because
-# mycache and kms may run on DIFFERENT machines:
-#   KMS_URL          default http://127.0.0.1:8110 (kms on this PC)
-#   KMS_APPROLE_DIR  default connect_external/kms/credentials (written by register_to_kms.sh)
-# Exports each KEY (value only in memory, nothing printed). kms sealed / down / no access /
-# key missing → clear error, return 1, nothing exported — no fallback to a secret file.
-# Secrets never become process arguments (bodies via stdin, token via a file descriptor).
+# ─────────────────────────────────────────────────────────────────────────────
+# kms_secrets.sh — how the Redis server reads its secrets from kms (sourced)
+#
+# Used by     start.sh — you do not run it yourself
+#
+# Use         source connect_external/kms/kms_secrets.sh
+#             kms_get mycache-redis mycache/redis REDIS_PASSWORD || exit 1
+#
+# Calls       1. GET  /v1/sys/health               200 unsealed · 503 sealed
+#             2. POST /v1/auth/approle/login       role_id + secret_id → 1-hour token
+#             3. GET  /v1/kv/data/mycache/redis    → REDIS_PASSWORD
+#             4. POST /v1/auth/token/revoke-self   token thrown away
+#
+# Result      each KEY exported — in memory only, never printed, never a file
+#
+# Errors      sealed / down / no access / key missing → clear message, return 1 (no fallback)
+#
+# Settings    .env  KMS_URL          default http://127.0.0.1:8110 (test http · prod https)
+#             .env  KMS_APPROLE_DIR  default connect_external/kms/credentials
+# ─────────────────────────────────────────────────────────────────────────────
 
 kms_get() {
     local role="${1:-}" path="${2:-}"; shift 2 2>/dev/null || true

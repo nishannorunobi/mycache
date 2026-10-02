@@ -1,13 +1,24 @@
 #!/bin/bash
-# connect_external/kms/add_secret_to_kms.sh — store a NEW (or changed) secret of the mycache Redis
-# server in kms, instead of writing it into a config file.
-#     bash connect_external/kms/add_secret_to_kms.sh <KEY>        e.g.  … NEW_API_KEY
-# Asks for the kms owner's password, then the value (both hidden). Stores it in kv/mycache/redis
-# next to the keys already there (they are kept). Nothing is printed except the version number.
-# Then read it in a script like the others:  kms_get mycache-redis mycache/redis <KEY>
-# (mycache-redis may already read kv/mycache/redis — no new sign-up needed.)
-# Over the kms HTTP API only — no kms file is used. NO mirror logging on purpose.
-# Exit 0 = stored; 1 = failed, nothing changed.
+# ─────────────────────────────────────────────────────────────────────────────
+# add_secret_to_kms.sh — a NEW secret of the mycache Redis server → kms
+#
+# What for    A new password / key / token goes into kms — never into .env.
+#
+# Who         The kms owner (needs the kms password). mycache itself can only read.
+#
+# How         bash connect_external/kms/add_secret_to_kms.sh NEW_API_KEY
+#
+# Output      kms password for nishan (hidden): ********
+#             Value for NEW_API_KEY (hidden): ********
+#             [  OK  ] kv/mycache/redis  NEW_API_KEY stored (version 3)
+#
+# Note        Other keys are kept. The same key name again = a new value (old versions kept).
+#
+# Next        use it in start.sh:
+#             kms_get mycache-redis mycache/redis REDIS_PASSWORD NEW_API_KEY || exit 1
+# ─────────────────────────────────────────────────────────────────────────────
+case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} n==1{ sub(/^# ?/,""); if(!t){printf "\033[1m%s\033[0m\n",$0; t=1; next} l=substr($0,1,12); if(l ~ /^[A-Z][A-Za-z ]+$/){c=(l ~ /^Errors/)?"\033[33m":"\033[36m"; printf "%s%s\033[0m%s\n",c,l,substr($0,13)} else print }' "$0"; exit 0 ;; esac
+
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${REG_ENV_FILE:-$(cd "$HERE/../.." && pwd)/.env}"

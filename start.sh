@@ -1,5 +1,28 @@
 #!/bin/bash
-# start.sh — Start the Redis cache.
+# ─────────────────────────────────────────────────────────────────────────────
+# start.sh — start mycache: the Redis cache (+ web UI on :8081)
+#
+# What for    Start Redis. Its password comes from kms — never from a file.
+#
+# Who         You, or the workspace startup (via ensure_running.sh).
+#
+# How         bash start.sh             Redis + web UI
+#             bash start.sh --no-ui     Redis only
+#
+# Steps       1. read .env — plain settings: version, port, KMS_URL
+#             2. get REDIS_PASSWORD from kms — in memory, never printed
+#             3. docker compose up -d — password → container env → /run (RAM)
+#
+# Output      ==> Redis is up
+#                 Password  : in kms (kv/mycache/redis)
+#
+# Errors      kms is SEALED          → unseal kms, run again
+#             no kms login files     → bash connect_external/kms/register_to_kms.sh
+#
+# Next        bash status.sh  ·  bash stop.sh
+# ─────────────────────────────────────────────────────────────────────────────
+case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} n==1{ sub(/^# ?/,""); if(!t){printf "\033[1m%s\033[0m\n",$0; t=1; next} l=substr($0,1,12); if(l ~ /^[A-Z][A-Za-z ]+$/){c=(l ~ /^Errors/)?"\033[33m":"\033[36m"; printf "%s%s\033[0m%s\n",c,l,substr($0,13)} else print }' "$0"; exit 0 ;; esac
+
 set -euo pipefail
 
 # ── Mirror logging ─────────────────────────────────────────────────────────────
