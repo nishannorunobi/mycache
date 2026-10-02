@@ -5,11 +5,21 @@ services:
     image: redis:${REDIS_VERSION}
     container_name: mycache-redis
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    # The password is never on a command line (ps / docker inspect): start.sh fetches it from
+    # kms into REDIS_PASSWORD → this container's env → a config file in RAM (/run is tmpfs).
+    # No password → "requirepass" without a value → Redis refuses to start (fails closed).
+    command:
+      - sh
+      - -c
+      - umask 077; printf 'requirepass %s\n' "$$REDIS_PASSWORD" > /run/redis.conf && chown redis /run/redis.conf
+        && exec docker-entrypoint.sh redis-server /run/redis.conf --appendonly yes
+    tmpfs:
+      - /run
     ports:
       - "${REDIS_HOST}:${REDIS_PORT}:6379"
       - "8892:8892"
     environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}  # from kms via start.sh (also read by cache-agent)
       LOG_MIRROR_ROOT: /mountspace/logs/myworkspace/projectspace/mycache
       TZ: ${TZ:-America/New_York}   # same clock as the host, so host and container mirror logs line up
       PYTHONUNBUFFERED: "1"          # else the agent's output sits in the awk|tee pipe buffer
@@ -22,7 +32,7 @@ services:
       my_docker_network:
         ipv4_address: 172.28.0.50      # static IP within my_docker_network's subnet
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -32,7 +42,7 @@ services:
     image: rediscommander/redis-commander:latest
     container_name: mycache-redis-ui
     environment:
-      REDIS_HOSTS: local:mycache-redis:6379:0:${REDIS_PASSWORD}
+      REDIS_HOSTS: local:mycache-redis:6379:0:${REDIS_PASSWORD:-}   # env only, never argv
     ports:
       - "8081:8081"
     networks:

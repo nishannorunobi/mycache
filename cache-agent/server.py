@@ -37,11 +37,11 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 # ── Redis helpers ─────────────────────────────────────────────────────────────
 
 def _redis_cmd(*args) -> str:
-    cmd = ["redis-cli", "-h", REDIS_HOST, "-p", str(REDIS_PORT_INT)]
-    if REDIS_PASSWORD:
-        cmd += ["-a", REDIS_PASSWORD, "--no-auth-warning"]
-    cmd += list(args)
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+    # The password goes to redis-cli through its environment (REDISCLI_AUTH), never as
+    # "-a <password>" — a command-line argument is visible to every process on the host.
+    cmd = ["redis-cli", "-h", REDIS_HOST, "-p", str(REDIS_PORT_INT)] + list(args)
+    env = dict(os.environ, REDISCLI_AUTH=REDIS_PASSWORD) if REDIS_PASSWORD else None
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=5, env=env)
     return r.stdout.strip()
 
 

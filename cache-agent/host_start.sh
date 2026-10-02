@@ -1,9 +1,28 @@
 #!/bin/bash
-# host_start.sh — start the cache-agent (Cache agent, :8892) INSIDE mycache-redis, from the HOST.
-# Part of the cache-agent project (this folder); its own start.sh runs inside the container.
-# Idempotent: when the agent already answers on :8892, nothing is done. Standalone —
-# no workspace paths (moved here from agents/docker-manager-agent/cacheagent/start-cache-agent.sh, 2026-09-29).
-#   bash host_start.sh
+# ─────────────────────────────────────────────────────────────────────────────
+# host_start.sh — start the cache-agent (AI helper, :8892) from the host
+#
+# What for    Run the agent inside the mycache-redis container.
+#
+# Who         You (it is not started by default).
+#
+# How         bash cache-agent/host_start.sh
+#
+# Steps       1. already answering on :8892 → nothing to do
+#             2. get ANTHROPIC_API_KEY + REDIS_PASSWORD from kms (the agent's own login)
+#             3. build the venv if missing
+#             4. start it: docker exec -e … — values by name, never on a command line
+#
+# Output      [OK] Cache agent running on :8892
+#
+# Errors      kms is SEALED          → unseal kms, run again
+#             no kms login files     → bash cache-agent/connect_external/kms/register_to_kms.sh
+#             container not running   → bash start.sh
+#
+# Next        bash cache-agent/host_status.sh  ·  bash cache-agent/host_stop.sh
+# ─────────────────────────────────────────────────────────────────────────────
+case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} n==1{ sub(/^# ?/,""); if(!t){printf "\033[1m%s\033[0m\n",$0; t=1; next} l=substr($0,1,12); if(l ~ /^[A-Z][A-Za-z ]+$/){c=(l ~ /^Errors/)?"\033[33m":"\033[36m"; printf "%s%s\033[0m%s\n",c,l,substr($0,13)} else print }' "$0"; exit 0 ;; esac
+
 set -euo pipefail
 
 # ── Mirror logging ─────────────────────────────────────────────────────────────
@@ -22,7 +41,6 @@ if [ -f "$_WS_ROOT/init/create_logging_path.sh" ]; then
     echo "[logging] → $LOG_FILE"
 fi
 # ──────────────────────────────────────────────────────────────────────────────
-# Standalone (no workspace → no mirror log): keep the agent's output next to it.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_FILE="${LOG_FILE:-$SCRIPT_DIR/memory/host_start.log}"
 mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
@@ -34,6 +52,16 @@ fi
 
 CONTAINER="mycache-redis"
 AGENT_DIR="/cache-agent"
+
+# The agent's secrets come from kms over its HTTP API (story KMS [1.4]) — the agent's OWN client
+# connect_external/kms/kms_secrets.sh and its own login (mycache-cache-agent); no file of kms or of
+# the Redis server is used. In memory only, handed to the agent by NAME (docker exec -e …): the
+# values never appear on a command line. kms sealed / down → stop here.
+# where kms is: the agent's own settings (only the KMS_* lines of agent.conf)
+[ -f "$SCRIPT_DIR/agent.conf" ] && source <(grep -E '^KMS_(URL|APPROLE_DIR)=' "$SCRIPT_DIR/agent.conf")
+source "$SCRIPT_DIR/connect_external/kms/kms_secrets.sh"
+kms_get mycache-cache-agent shared/anthropic ANTHROPIC_API_KEY || exit 1
+kms_get mycache-cache-agent mycache/redis REDIS_PASSWORD || exit 1
 
 if ! docker inspect "$CONTAINER" --format '{{.State.Running}}' 2>/dev/null | grep -q true; then
     echo "[ERROR] Container $CONTAINER is not running." >&2
@@ -57,7 +85,7 @@ docker exec "$CONTAINER" sh -c \
 # Start fresh; route logs to mountspace on the host via nohup+disown.
 mkdir -p "$(dirname "$LOG_FILE")"
 touch "$LOG_FILE" 2>/dev/null || true   # create if possible; never abort
-docker exec "$CONTAINER" sh -c \
+docker exec -e ANTHROPIC_API_KEY -e REDIS_PASSWORD "$CONTAINER" sh -c \
     "cd $AGENT_DIR && . ./agent.conf && \
      .venv/bin/uvicorn server:app \
         --host 0.0.0.0 --port \${PORT:-8892} \

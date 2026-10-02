@@ -1,6 +1,10 @@
-# Cache Agent — Configuration
-# Copy to agent.conf and fill in your values.
-
-ANTHROPIC_API_KEY=your-api-key-here
-REDIS_PASSWORD=cache_pass
+# Cache Agent — Configuration (no secrets)
+# Copy to agent.conf. The secrets are NOT in this file — never put them here:
+#   ANTHROPIC_API_KEY  lives in kms: kv/shared/anthropic ─┐ both fetched by host_start.sh with
+#   REDIS_PASSWORD     lives in kms: kv/mycache/redis     ─┘ the agent's own kms login
+# First time: bash connect_external/kms/register_to_kms.sh · details: ../README.md "Where are the secrets?"
 PORT=8892
+
+# kms (where the secrets live) — the agent may run on another machine than kms
+KMS_URL=http://127.0.0.1:8110      # test: http://<kms-host>:<port> · prod: https://…
+KMS_APPROLE_DIR=                   # empty = connect_external/kms/credentials

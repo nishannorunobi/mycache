@@ -1,4 +1,14 @@
 #!/bin/sh
+# ─────────────────────────────────────────────────────────────────────────────
+# health.sh — print ok / down: is the agent answering? (inside the container)
+#
+# Who         Scripts.
+#
+# How         (inside the container)  sh /cache-agent/health.sh
+#
+# Output      ok
+# ─────────────────────────────────────────────────────────────────────────────
+case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} n==1{ sub(/^# ?/,""); if(!t){printf "\033[1m%s\033[0m\n",$0; t=1; next} l=substr($0,1,12); if(l ~ /^[A-Z][A-Za-z ]+$/){c=(l ~ /^Errors/)?"\033[33m":"\033[36m"; printf "%s%s\033[0m%s\n",c,l,substr($0,13)} else print }' "$0"; exit 0 ;; esac
 
 # ── Mirror logging — POSIX sh: no BASH_SOURCE, no process substitution ────────
 _SELF_ABS="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
@@ -21,5 +31,4 @@ else
 fi
 echo "[logging] → $LOG_FILE"
 # ──────────────────────────────────────────────────────────────────────────────
-# health.sh — Quick liveness check for the cache-agent.
 curl -sf http://localhost:${PORT:-8892}/health >/dev/null 2>&1 && echo "ok" || echo "down"

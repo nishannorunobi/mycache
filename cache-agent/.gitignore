@@ -17,3 +17,6 @@ venv/
 # Logs & runtime
 *.log
 memory/*.log
+
+# kms login files — written by connect_external/kms/register_to_kms.sh
+connect_external/kms/credentials/
