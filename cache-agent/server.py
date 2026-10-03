@@ -1,5 +1,11 @@
 """
-Cache Agent HTTP Server — runs inside mycache-redis container on port 8892.
+Cache Agent HTTP Server — runs inside mycache-redis container on port 8892
+(started by supervisor.py, the container's entry point).
+
+Secrets: never kept here. REDIS_PASSWORD / ANTHROPIC_API_KEY in the environment are
+kms ADDRESSES (agent.conf); connect_external/kms/kms.py turns them into values when
+needed (cached 60 s). Redis connections use a redis-py CredentialProvider, so a
+password rotated in kms is picked up by the next new connection — no restart.
 
 Endpoints:
   GET  /health              liveness + Redis ping status
@@ -11,7 +17,6 @@ Endpoints:
 import asyncio
 import json
 import os
-import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -21,14 +26,38 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 import anthropic as _anthropic
+import redis
+from redis.credentials import CredentialProvider
 from pydantic import BaseModel
 
 AGENT_DIR = Path(__file__).parent
 load_dotenv(AGENT_DIR / "agent.conf")
+sys.path.insert(0, str(AGENT_DIR / "connect_external" / "kms"))
+import kms  # noqa: E402
 
-REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
 REDIS_HOST     = "127.0.0.1"
 REDIS_PORT_INT = 6379
+
+
+def _secret(name: str, fresh: bool = False) -> str:
+    """The value behind NAME: a kms address (normal) → kms, cached 60 s; a plain value → as is."""
+    v = os.getenv(name, "")
+    if kms.is_address(v):
+        return kms.read(v, fresh=fresh).get(name, "")
+    return v
+
+
+class _FromKms(CredentialProvider):
+    """redis-py asks this on EVERY new connection — so a rotated password just works."""
+    def get_credentials(self):
+        pw = _secret("REDIS_PASSWORD")
+        return (pw,) if pw else ()
+
+
+_r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT_INT, credential_provider=_FromKms(),
+                 socket_timeout=5, socket_connect_timeout=5, decode_responses=True)
+for _cmd in ("PING", "INFO", "CLIENT LIST"):          # raw replies (PONG, the INFO text) — parsed below as before
+    _r.set_response_callback(_cmd, lambda r, **kw: r)
 
 app = FastAPI(title="Cache Agent", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -37,12 +66,15 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 # ── Redis helpers ─────────────────────────────────────────────────────────────
 
 def _redis_cmd(*args) -> str:
-    # The password goes to redis-cli through its environment (REDISCLI_AUTH), never as
-    # "-a <password>" — a command-line argument is visible to every process on the host.
-    cmd = ["redis-cli", "-h", REDIS_HOST, "-p", str(REDIS_PORT_INT)] + list(args)
-    env = dict(os.environ, REDISCLI_AUTH=REDIS_PASSWORD) if REDIS_PASSWORD else None
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=5, env=env)
-    return r.stdout.strip()
+    # In-process (redis-py): no password on any command line. If Redis refuses the
+    # cached password (rotated less than a minute ago), ask kms once more and retry.
+    try:
+        out = _r.execute_command(*args)
+    except redis.exceptions.AuthenticationError:
+        _secret("REDIS_PASSWORD", fresh=True)
+        _r.connection_pool.disconnect()
+        out = _r.execute_command(*args)
+    return out if isinstance(out, str) else str(out)
 
 
 def _redis_running() -> bool:
@@ -130,7 +162,10 @@ class TaskRequest(BaseModel):
 
 @app.post("/api/tasks")
 def run_task(req: TaskRequest):
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    try:
+        api_key = _secret("ANTHROPIC_API_KEY")
+    except kms.KmsError as e:
+        return {"error": f"ANTHROPIC_API_KEY: {e}"}
     if not api_key:
         return {"error": "ANTHROPIC_API_KEY not set"}
     client = _anthropic.Anthropic(api_key=api_key)
@@ -154,7 +189,10 @@ def run_task(req: TaskRequest):
 @app.websocket("/ws/chat")
 async def ws_chat(ws: WebSocket):
     await ws.accept()
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    try:
+        api_key = _secret("ANTHROPIC_API_KEY")
+    except kms.KmsError:
+        api_key = ""
     client  = _anthropic.Anthropic(api_key=api_key) if api_key else None
     history: list = []
     try:

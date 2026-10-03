@@ -35,7 +35,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 CRED = os.environ.get("KMS_CREDENTIALS_DIR") or os.path.join(HERE, "credentials")   # test switch only
 ADDRESS = re.compile(r"^(https?://[^/]+)/v1/(kv/.+)$")
-CACHE_SECONDS = 60
+CACHE_SECONDS = int(os.environ.get("KMS_CACHE_SECONDS") or 60)      # test switch only
 
 
 class KmsError(Exception):
@@ -148,3 +148,17 @@ def resolve(env, fresh=False):
         secrets[name] = entry[name]
         where[name] = m.group(2)
     return secrets, where
+
+
+if __name__ == "__main__":          # not a program: --help prints the header, anything else says so
+    import sys
+    seen = False
+    for line in open(__file__):
+        if line.startswith("# ─"):
+            if seen:
+                break
+            seen = True
+            continue
+        if seen:
+            print(line[2:].rstrip())
+    sys.exit(0 if sys.argv[1:] in (["-h"], ["--help"]) else 2)

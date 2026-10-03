@@ -13,7 +13,8 @@
 # Steps       1. agent.conf → settings; every kms address → its value (kms.py, own login)
 #             2. /run/redis.conf (RAM): requirepass; the Redis UI's copy in /mycache-secrets
 #             3. start redis-server as a child (the image's docker-entrypoint → user redis)
-#             4. start the agent API (uvicorn server:app :PORT) as a child, secrets by env
+#             4. start the agent API (uvicorn server:app :PORT) as a child — it gets the kms
+#                addresses and asks kms itself per new Redis connection (rotation-proof)
 #             5. watch: Redis exits → this exits too (compose restarts the container)
 #                       API exits   → started again after 2 s
 #                       SIGTERM     → Redis saves and stops, then the API, then exit 0
@@ -107,8 +108,9 @@ def start_redis(password):
 
 
 def start_api(env, secrets):
+    # The API gets the ADDRESSES (agent.conf as is), not the values: it asks kms itself,
+    # per new Redis connection (redis-py CredentialProvider) — so a rotation needs no restart.
     api_env = dict(env)
-    api_env.update(secrets)
     port = env.get("PORT", "8892")
     p = subprocess.Popen([sys.executable, "-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", port,
                           "--no-use-colors", "--access-log"], cwd=AGENT_DIR, env=api_env)

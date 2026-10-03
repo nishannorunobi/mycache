@@ -19,7 +19,8 @@
 #             T9  the API answers and sees Redis · T4 password works, wrong refused
 #             T6  password nowhere visible · T17 Redis UI via the RAM volume (really answers)
 #             T18 API dies → restarted by the supervisor · T19 Redis dies → container exits
-#             T20 docker stop → clean exit 0 · T3 refused outside its own paths
+#             T20 docker stop → clean exit 0 · T21 rotated password → next connection, no restart
+#             T3  refused outside its own paths
 #             T5  empty password → not started · T16 a plain value is used as written
 #             T8  static: nothing printed, tracked .env / agent.conf secret-free, credentials
 #                 ignored, one kms folder (the agent's) · T11 add_new_secret_to_kms.sh
@@ -137,7 +138,7 @@ if healthy && echo "$lg" | grep -q 'REDIS_PASSWORD ← kms (mycache/redis)' && e
     ok "T1 supervisor: both secrets from kms (own login), redis-server + API started"
     ok "T7 compose healthcheck (password from /run/redis.conf, no -a) → healthy"
 else bad "T1/T7 supervisor: $(echo "$lg" | grep -E 'agent|ERROR' | tail -3)"; fi
-h="$(api)"; echo "$h" | grep -q '"redis_running":true' && ok "T9 the agent API answers /health and sees Redis (secrets handed over by env)" || bad "T9 API: '$h'"
+h="$(api)"; echo "$h" | grep -q '"redis_running":true' && ok "T9 the agent API answers /health and sees Redis (redis-py, password asked from kms per connection)" || bad "T9 API: '$h'"
 
 # ── T4 + T6 on the same container ────────────────────────────────────────────
 good="$(REDISCLI_AUTH="$RPW" docker exec -e REDISCLI_AUTH "$R" redis-cli ping 2>&1)"
@@ -208,6 +209,24 @@ if healthy && ! docker logs "$R" 2>&1 | grep -q 'REDIS_PASSWORD ← kms' && [ "$
 else bad "T16 plain value: running=$(docker inspect -f '{{.State.Running}}' "$R") · $(docker logs "$R" 2>&1 | grep -E 'agent|ERROR' | tail -2 | tr '\n' ' ')"; fi
 docker rm -f "$R" >/dev/null
 
+# ── T21: rotation — a new password in kms + Redis (ACL) is used by the agent's NEXT connection ──
+run_mycache "$CONF_OK" -e KMS_CACHE_SECONDS=2; healthy; api >/dev/null
+RPW2="redis-$(head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+OT="$(owner_token)"; printf '%s' "$RPW2" | python3 -c 'import sys,json; print(json.dumps({"data":{"REDIS_PASSWORD":sys.stdin.read()}}))' \
+    | curl -s -o /dev/null -X POST -H @<(printf 'X-Vault-Token: %s\n' "$OT") --data @- "$KMS_URL/v1/kv/data/mycache/redis"; unset OT
+export RPW RPW2
+docker exec -e RPW -e RPW2 "$R" sh -c 'REDISCLI_AUTH="$RPW" redis-cli ACL SETUSER default ">$RPW2" "<$RPW"' >/dev/null 2>&1   # new in, old out (by name, never argv on the host)
+docker exec -e RPW2 "$R" sh -c 'REDISCLI_AUTH="$RPW2" redis-cli CLIENT KILL TYPE normal' >/dev/null 2>&1                     # drop every open connection → the agent must reconnect
+sleep 3
+h="$(docker exec "$R" wget -q -O - http://127.0.0.1:8892/health 2>/dev/null)"
+c="$(docker exec "$R" wget -q -O - http://127.0.0.1:8892/api/redis/clients 2>/dev/null)"
+old="$(docker exec -e RPW "$R" sh -c 'REDISCLI_AUTH="$RPW" redis-cli ping' 2>&1)"
+echo "$h" | grep -q '"redis_running":true' && echo "$c" | grep -q '"count"' && echo "$old" | grep -qiE 'WRONGPASS|NOAUTH' \
+    && ! docker logs "$R" 2>&1 | grep -q 'starting it again' \
+    && ok "T21 rotation: new password in kms + Redis → the agent reconnected with it, no restart; the old one is refused" \
+    || bad "T21 rotation: health='$h' old='$old' restarts=$(docker logs "$R" 2>&1 | grep -c 'starting it again')"
+docker rm -f "$R" >/dev/null; unset RPW2
+
 # ── T8 static ────────────────────────────────────────────────────────────────
 t8=0
 grep -nE '(echo|printf|print).*REDIS_PASSWORD' "$MYCACHE/start.sh" "$AGENT"/*.sh | grep -v 'in kms' >/dev/null && t8=1   # never printed
@@ -230,12 +249,12 @@ o3="$(printf '%s\n%s\n' "$PW" "$NEW2" | REG_AGENT_CONF="$CA" bash "$AGENT/connec
 lines=0; grep -qx "TEST_AGENT_KEY=$KADDR/mycache/cache-agent" "$CA" && [ "$(grep -c '^TEST_AGENT_KEY=' "$CA")" = 1 ] && [ "$(grep -c '^REDIS_PASSWORD=' "$CA")" = 1 ] && lines=1
 grep -qF -- "$NEW2" "$CA" && lines=0
 run_mycache "$(cat "$CA")"; rm -f "$CA"; healthy
-export X3="$NEW2"
-seen="$(docker exec -e X3 "$R" sh -c 'for p in $(pgrep -f "uvicorn server:app"); do tr "\0" "\n" < /proc/$p/environ; done | grep -c "^TEST_AGENT_KEY=$X3$"')"; unset X3
+seen="$(docker exec "$R" sh -c 'for p in $(pgrep -f "uvicorn server:app"); do tr "\0" "\n" < /proc/$p/environ; done | grep -c "^TEST_AGENT_KEY=http://.*/v1/kv/data/mycache/cache-agent$"')"
+leak11="$(docker exec "$R" sh -c 'cat /proc/[0-9]*/environ 2>/dev/null | tr "\0" "\n"' | grep -cF -- "$NEW2")"       # the VALUE is in no process env
 docker rm -f "$R" >/dev/null
-[ $lines = 1 ] && [ "${seen:-0}" -ge 1 ] && echo "$o2" | grep -q 'stored (version' && ! echo "$o2$o3" | grep -qF -- "$NEW2" \
-    && ok "T11 add_new_secret_to_kms.sh: asks the name, stores it, writes the agent.conf line once; the API gets it by env; nothing printed" \
-    || bad "T11 add secret: lines=$lines seen=${seen:-?} · $(echo "$o2" | tail -1)"
+[ $lines = 1 ] && [ "${seen:-0}" -ge 1 ] && [ "${leak11:-1}" = 0 ] && echo "$o2" | grep -q 'stored (version' && ! echo "$o2$o3" | grep -qF -- "$NEW2" \
+    && ok "T11 add_new_secret_to_kms.sh: asks the name, stores it, writes the agent.conf line once; the API gets the ADDRESS (never the value) by env; nothing printed" \
+    || bad "T11 add secret: lines=$lines seen=${seen:-?} leak=${leak11:-?} · $(echo "$o2" | tail -1)"
 
 # ── T12 every script explains itself ─────────────────────────────────────────
 bad12=""
@@ -270,13 +289,13 @@ docker rm -f "$R" >/dev/null
 
 # ── T10 ──────────────────────────────────────────────────────────────────────
 leak=0
-for v in "$RPW" "$AKEY" "$PW" "$NEW2"; do
+for v in "$RPW" "$AKEY" "$PW" "$NEW2" "${RPW2:-}"; do [ -n "$v" ] || continue
     grep -rqF -- "$v" "$LOGS/kms" "$LOGS/mycache" "$AUDIT" 2>/dev/null && leak=1
     git -C "$PROJECT" grep -qF -- "$v" 2>/dev/null && leak=1
     git -C "$MYCACHE" grep -qF -- "$v" 2>/dev/null && leak=1
 done
 [ $leak = 0 ] && ok "T10 no test value in mirror logs, audit log or git" || bad "T10 a test value leaked"
 
-unset S1 S2 PW RPW AKEY NEW2
+unset S1 S2 PW RPW RPW2 AKEY NEW2
 [ "$FAIL" = 0 ] && ok "mycache tests passed (throwaway containers removed)" && exit 0
 exit 1
