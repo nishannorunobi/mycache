@@ -22,10 +22,10 @@ REDIS_PASSWORD=http://kms-openbao:8200/v1/kv/data/mycache/redis
 | Secret | Used by | Where it lives | Fetched by |
 |---|---|---|---|
 | `REDIS_PASSWORD` | Redis server, redis-commander | kms `kv/mycache/redis` | the container itself: `connect_external/kms/fetch_from_kms.py` (Redis UI: from a RAM volume) |
-| `REDIS_PASSWORD` | cache-agent | kms `kv/mycache/redis` | `cache-agent/host_start.sh` (its own kms login) |
-| `ANTHROPIC_API_KEY` | cache-agent | kms `kv/shared/anthropic` | `cache-agent/host_start.sh` |
+| `REDIS_PASSWORD` | cache-agent | kms `kv/mycache/redis` | the agent itself: `cache-agent/connect_external/kms/fetch_from_kms.py` (its own kms login) |
+| `ANTHROPIC_API_KEY` | cache-agent | kms `kv/shared/anthropic` | the agent itself (same) |
 
-- `.env` lists every key the containers need — plain values, and kms addresses for secrets. It
+- `.env` (and `cache-agent/agent.conf`) list every key the containers need — plain values, and kms addresses for secrets. It
   is in git on purpose (no secret in it). A plain value instead of the address also works (a quick
   test without kms) — never commit that; `test_kms.sh` checks it.
 - **New secret?** Never into a config file: `bash connect_external/kms/add_new_secret_to_kms.sh <KEY>`

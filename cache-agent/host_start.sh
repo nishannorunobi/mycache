@@ -9,14 +9,14 @@
 # How         bash cache-agent/host_start.sh
 #
 # Steps       1. already answering on :8892 → nothing to do
-#             2. get ANTHROPIC_API_KEY + REDIS_PASSWORD from kms (the agent's own login)
-#             3. build the venv if missing
-#             4. start it: docker exec -e … — values by name, never on a command line
+#             2. first time only: sign the agent up with kms (asks your kms password)
+#             3. start it in the container: fetch_from_kms.py fills in its secrets
+#                (agent.conf values are kms addresses), then uvicorn — Python from the image
 #
 # Output      [OK] Cache agent running on :8892
 #
-# Errors      kms is SEALED          → unseal kms, run again
-#             no kms login files     → bash cache-agent/connect_external/kms/signup_with_kms.sh
+# Errors      kms is SEALED          → unseal kms, run again (reason in the log below)
+#             not signed up, no terminal → run bash cache-agent/host_start.sh by hand once
 #             container not running   → bash start.sh
 #
 # Next        bash cache-agent/host_status.sh  ·  bash cache-agent/host_stop.sh
@@ -53,29 +53,21 @@ fi
 CONTAINER="mycache-redis"
 AGENT_DIR="/cache-agent"
 
-# The agent's secrets come from kms over its HTTP API (story KMS [1.4]) — the agent's OWN client
-# connect_external/kms/fetch_from_kms.sh and its own login (mycache-cache-agent); no file of kms or of
-# the Redis server is used. In memory only, handed to the agent by NAME (docker exec -e …): the
-# values never appear on a command line. kms sealed / down → stop here.
-# where kms is: the agent's own settings (only the KMS_* lines of agent.conf)
-[ -f "$SCRIPT_DIR/agent.conf" ] && source <(grep -E '^KMS_(URL|APPROLE_DIR)=' "$SCRIPT_DIR/agent.conf")
-source "$SCRIPT_DIR/connect_external/kms/fetch_from_kms.sh"
-kms_get mycache-cache-agent shared/anthropic ANTHROPIC_API_KEY || exit 1
-kms_get mycache-cache-agent mycache/redis REDIS_PASSWORD || exit 1
+# The agent fetches its OWN secrets inside the container (connect_external/kms/fetch_from_kms.py,
+# its own login). This PC only makes sure the agent has its kms login — once, by hand: it asks
+# your kms password, so never inside startup / shutdown (SVC_RUN) and never without a terminal.
+if ! ls "$SCRIPT_DIR"/connect_external/kms/credentials/*/secret_id >/dev/null 2>&1; then
+    { [ -z "${SVC_RUN:-}" ] && [ -t 0 ]; } \
+        || { echo "[ERROR] cache-agent is not signed up with kms yet — run by hand once: bash $SCRIPT_DIR/host_start.sh" >&2; exit 1; }
+    bash "$SCRIPT_DIR/connect_external/kms/signup_with_kms.sh" || exit 1
+fi
 
 if ! docker inspect "$CONTAINER" --format '{{.State.Running}}' 2>/dev/null | grep -q true; then
     echo "[ERROR] Container $CONTAINER is not running." >&2
     exit 1
 fi
 
-# Build venv if missing, Python broken, or uvicorn not installed (Alpine: sh not bash)
-# "venv exists" is not "venv works": run it. A .venv whose python is missing in this
-# container ("uvicorn: not found") is rebuilt (build.sh — the first build needs network).
-if ! docker exec "$CONTAINER" sh -c "$AGENT_DIR/.venv/bin/python -c 'import uvicorn'" &>/dev/null; then
-    echo "[INFO] Building cache-agent venv inside container..."
-    docker exec "$CONTAINER" rm -rf "$AGENT_DIR/.venv"
-    docker exec "$CONTAINER" sh "$AGENT_DIR/build.sh"
-fi
+# Python + packages come from mycache's image (/opt/venv) — nothing is built at run time.
 
 # Kill any existing cache-agent uvicorn (idempotent).
 # The [u]vicorn bracket trick prevents pkill from matching its own command line.
@@ -85,9 +77,9 @@ docker exec "$CONTAINER" sh -c \
 # Start fresh; route logs to mountspace on the host via nohup+disown.
 mkdir -p "$(dirname "$LOG_FILE")"
 touch "$LOG_FILE" 2>/dev/null || true   # create if possible; never abort
-docker exec -e ANTHROPIC_API_KEY -e REDIS_PASSWORD "$CONTAINER" sh -c \
-    "cd $AGENT_DIR && . ./agent.conf && \
-     .venv/bin/uvicorn server:app \
+docker exec "$CONTAINER" sh -c \
+    "cd $AGENT_DIR && set -a && . ./agent.conf && set +a && \
+     exec /opt/venv/bin/python connect_external/kms/fetch_from_kms.py /opt/venv/bin/uvicorn server:app \
         --host 0.0.0.0 --port \${PORT:-8892} \
         --no-use-colors --access-log" \
     < /dev/null 2>&1 \
@@ -95,7 +87,7 @@ docker exec -e ANTHROPIC_API_KEY -e REDIS_PASSWORD "$CONTAINER" sh -c \
 disown
 
 # Say OK only when the agent really answers — the launch above returns at once even if
-# uvicorn dies a second later (e.g. a broken .venv: "uvicorn: not found").
+# uvicorn dies a second later (e.g. kms sealed: the reason is in the log).
 for _ in $(seq 1 30); do
     curl -fsS --max-time 2 -o /dev/null "http://localhost:8892/health" 2>/dev/null && { echo "[OK] Cache agent running on :8892"; exit 0; }
     sleep 1

@@ -15,13 +15,13 @@
 #             docker-compose command and healthcheck
 #
 # Checks      T0  server + agent sign themselves up (a kms address in .env is never copied)
-#             T1  the Redis container fetches REDIS_PASSWORD itself · T9 agent fetch
+#             T1  the Redis container fetches REDIS_PASSWORD itself · T9 the agent fetches its own
 #             T3  refused outside own paths · T4 Redis password works, wrong refused
 #             T5  empty password → Redis refuses to start · T6 password on no command line
 #             T7  healthcheck without -a · T8 nothing printed, tracked .env / agent.conf
 #                 secret-free, credentials ignored · T11 add_new_secret_to_kms.sh
-#             T12 every script has a tidy header + --help · T13 agent client keeps its folder
-#             T14 no credentials: start.sh in startup → message · agent by hand signs up
+#             T12 every script has a tidy header + --help · T13 agent uses only its own login
+#             T14 no login, in startup: start.sh / host_start.sh → message, nothing started
 #             T15 .env lists every key compose needs · T16 a plain value still works
 #             T17 the Redis UI gets the password from the RAM volume and connects
 #             T2  kms sealed → container stops with SEALED · T10 no test value in logs / git
@@ -104,6 +104,12 @@ redis_run() {   # redis_run <REDIS_PASSWORD value> [more docker args…] — val
         --health-cmd "$HC" --health-interval 1s --health-retries 30 "$REDIS_IMAGE" \
         /opt/venv/bin/python /connect_external/kms/fetch_from_kms.py sh -c "$CMD" >/dev/null
 }
+agent_run() {   # agent_run <sh test> — the agent's own fetcher + login, values compared by NAME
+    ANTHROPIC_API_KEY="$KADDR/shared/anthropic" REDIS_PASSWORD="$KADDR/mycache/redis" X1="$AKEY" X2="$RPW" \
+    docker run --rm --network "$NET" -e ANTHROPIC_API_KEY -e REDIS_PASSWORD -e X1 -e X2 "${@:2}" \
+        -e KMS_CREDENTIALS_DIR=/creds -v "$KMS_APPROLE_DIR/mycache-cache-agent:/creds/mycache-cache-agent:ro" \
+        -v "$MYCACHE/cache-agent/connect_external/kms:/a:ro" "$REDIS_IMAGE" /opt/venv/bin/python /a/fetch_from_kms.py sh -c "$1" 2>&1
+}
 healthy() { for _ in $(seq 1 30); do [ "$(docker inspect -f '{{.State.Health.Status}}' "$R" 2>/dev/null)" = healthy ] && return 0
             [ "$(docker inspect -f '{{.State.Running}}' "$R" 2>/dev/null)" = false ] && return 1; sleep 1; done; return 1; }
 stopped() { for _ in $(seq 1 15); do [ "$(docker inspect -f '{{.State.Running}}' "$R" 2>/dev/null)" = false ] && return 0; sleep 1; done; return 1; }
@@ -114,10 +120,10 @@ if healthy && docker logs "$R" 2>&1 | grep -q 'REDIS_PASSWORD ← kms (kv/data/m
     ok "T1 the Redis container fetches REDIS_PASSWORD from kms itself (.env value = its kms address)"
     ok "T7 compose healthcheck (password from /run/redis.conf, no -a) → healthy"
 else bad "T1/T7 container fetch: $(docker logs "$R" 2>&1 | tail -2)"; fi
-# T9
-out="$( ( source "$MYCACHE/cache-agent/connect_external/kms/fetch_from_kms.sh"; kms_get mycache-cache-agent shared/anthropic ANTHROPIC_API_KEY \
-          && kms_get mycache-cache-agent mycache/redis REDIS_PASSWORD && [ "$ANTHROPIC_API_KEY" = "$AKEY" ] && [ "$REDIS_PASSWORD" = "$RPW" ] && echo MATCH ) 2>&1 )"
-[ "$out" = MATCH ] && ok "T9 cache-agent (own client + login) gets ANTHROPIC_API_KEY and REDIS_PASSWORD" || bad "T9 '$out'"
+# T9: the agent fetches its own secrets in the container (agent.conf values = kms addresses)
+out="$(agent_run '[ "$ANTHROPIC_API_KEY" = "$X1" ] && [ "$REDIS_PASSWORD" = "$X2" ] && echo MATCH')"
+echo "$out" | grep -q MATCH && echo "$out" | grep -q 'ANTHROPIC_API_KEY ← kms' && ! echo "$out" | grep -qF -- "$AKEY" \
+    && ok "T9 cache-agent fetches ANTHROPIC_API_KEY + REDIS_PASSWORD itself (own fetcher + login), nothing printed" || bad "T9 '$(echo "$out" | tail -1)'"
 # T4 + T6 on the same container
 good="$(REDISCLI_AUTH="$RPW" docker exec -e REDISCLI_AUTH "$R" redis-cli ping 2>&1)"
 wrong="$(REDISCLI_AUTH=not-the-password docker exec -e REDISCLI_AUTH "$R" redis-cli ping 2>&1)"
@@ -161,9 +167,9 @@ docker rm -f "$U" "$R" >/dev/null
 redis_run "$KADDR/shared/anthropic"
 stopped && docker logs "$R" 2>&1 | grep -q 'may not read' && r1=1 || r1=0
 docker rm -f "$R" >/dev/null
-e2="$( ( source "$MYCACHE/cache-agent/connect_external/kms/fetch_from_kms.sh"; kms_get mycache-cache-agent mychannels/rabbitmq RABBITMQ_PASS ) 2>&1 )"; r2=$?
-[ $r1 = 1 ] && [ $r2 = 1 ] && echo "$e2" | grep -q 'may not read' \
-    && ok "T3 each login is refused outside its own paths (container stops with the reason)" || bad "T3 access not limited ($r1/$r2)"
+e2="$(RABBITMQ_PASS="$KADDR/mychannels/rabbitmq" agent_run 'echo SHOULD-NOT-RUN' -e RABBITMQ_PASS)"
+[ $r1 = 1 ] && echo "$e2" | grep -q 'may not read' && ! echo "$e2" | grep -q SHOULD-NOT-RUN \
+    && ok "T3 each login is refused outside its own paths (container stops with the reason)" || bad "T3 access not limited ($r1)"
 
 # T5: empty password → Redis refuses to start · T16: a plain value is used as written
 redis_run ""
@@ -196,8 +202,7 @@ srv="$(TEST_NEW_KEY="$KADDR/mycache/redis" REDIS_PASSWORD="$KADDR/mycache/redis"
         -v "$MYCACHE/connect_external/kms:/connect_external/kms:ro" "$REDIS_IMAGE" /opt/venv/bin/python /connect_external/kms/fetch_from_kms.py \
         sh -c '[ "$TEST_NEW_KEY" = "$X1" ] && [ "$REDIS_PASSWORD" = "$X2" ] && echo A' 2>/dev/null)"
 out="$srv
-$( ( source "$MYCACHE/cache-agent/connect_external/kms/fetch_from_kms.sh"; kms_get mycache-cache-agent mycache/cache-agent TEST_AGENT_KEY \
-          && [ "$TEST_AGENT_KEY" = "$NEW2" ] && echo B ) 2>&1 )"
+$(TEST_AGENT_KEY="$KADDR/mycache/cache-agent" X3="$NEW2" agent_run '[ "$TEST_AGENT_KEY" = "$X3" ] && echo B' -e TEST_AGENT_KEY -e X3 | grep -x B)"
 if [ "$out" = "$(printf 'A\nB')" ] && echo "$o1" | grep -q 'stored (version' && echo "$o2" | grep -q 'stored (version' \
    && ! echo "$o1$o2" | grep -qF -- "$NEW1" && ! echo "$o1$o2" | grep -qF -- "$NEW2"; then
     ok "T11 add_new_secret_to_kms.sh (server + agent): stored in own path, readable, old keys kept, nothing printed"
@@ -213,26 +218,23 @@ for f in $(cd "$MYCACHE" && { git ls-files '*.sh'; ls connect_external/kms/*.sh 
     out="$(cd /tmp && $sh_ "$p" --help 2>&1)"; rc=$?
     [ $rc = 0 ] && echo "$out" | head -1 | grep -q "$n" && echo "$out" | grep -q 'How' || bad12+=" $f(--help)"
 done
-py="$MYCACHE/connect_external/kms/fetch_from_kms.py"
-out="$(python3 "$py" --help 2>&1)"; echo "$out" | head -1 | grep -q fetch_from_kms.py && echo "$out" | grep -q How || bad12+=" fetch_from_kms.py(--help)"
+for py in "$MYCACHE/connect_external/kms/fetch_from_kms.py" "$MYCACHE/cache-agent/connect_external/kms/fetch_from_kms.py"; do
+    out="$(python3 "$py" --help 2>&1)"; echo "$out" | head -1 | grep -q fetch_from_kms.py && echo "$out" | grep -q How || bad12+=" ${py#$MYCACHE/}(--help)"; done
 [ -z "$bad12" ] && ok "T12 every mycache script has a tidy header and answers --help" || bad "T12:$bad12"
 
-# T13 both clients in ONE shell, using their default folders (regression: kms_get must not change a global)
-t13="$( ( unset KMS_APPROLE_DIR
-          d2="$MYCACHE/cache-agent/connect_external/kms/credentials"
-          ls -d "$d2/mycache-cache-agent" >/dev/null 2>&1 || { echo "SKIP no live login files"; exit 0; }
-          source "$MYCACHE/cache-agent/connect_external/kms/fetch_from_kms.sh"; KMS_URL=http://127.0.0.1:8110 kms_get mycache-cache-agent mycache/redis REDIS_PASSWORD 2>&1 | grep -q 'no kms login files' && echo WRONG-FOLDER
-          [ -z "${KMS_APPROLE_DIR:-}" ] && echo "global untouched" || echo "global CHANGED" ) )"
-case "$t13" in *SKIP*) ok "T13 skipped (no live login files)";; *WRONG-FOLDER*|*CHANGED*) bad "T13 kms_get leaks its folder into a global: $t13";; *) ok "T13 the agent client uses its own folder; global untouched";; esac
+# T13 the agent uses only its own login folder — the server's login is never mounted for it
+t13=0; grep -q 'connect_external/kms/fetch_from_kms.py' "$MYCACHE/cache-agent/host_start.sh" || t13=1
+grep -nE "\.\./connect_external|[ '=]/connect_external/kms" "$MYCACHE"/cache-agent/*.sh >/dev/null && t13=1   # the server's folder (../ or its in-container /connect_external/kms)
+[ $t13 = 0 ] && ok "T13 the agent runs its own fetcher with its own login (never the server's)" || bad "T13 agent uses the server's folder"
 
 # T14 first fetch with no credentials: in startup → message; by hand → signs up once by itself
 if ls "$MYCACHE"/connect_external/kms/credentials/*/secret_id >/dev/null 2>&1; then o="SKIP"; else
     o="$( (cd /tmp && SVC_RUN=1 bash "$MYCACHE/start.sh" </dev/null; echo "rc=$?") 2>&1 )"; fi        # stops BEFORE docker compose
-rm -rf "$KMS_APPROLE_DIR/mycache-cache-agent"
-o2="$( ( printf '%s\n' "$PW" | KMS_AUTO_REGISTER=1 REG_AGENT_CONF=/dev/null bash -c "source '$MYCACHE/cache-agent/connect_external/kms/fetch_from_kms.sh'; kms_get mycache-cache-agent mycache/redis REDIS_PASSWORD && [ \"\$REDIS_PASSWORD\" = '$RPW' ] && echo MATCH" ) 2>&1 )"
+if ls "$MYCACHE"/cache-agent/connect_external/kms/credentials/*/secret_id >/dev/null 2>&1 || curl -fsS -o /dev/null --max-time 2 http://localhost:8892/health 2>/dev/null; then o2="SKIP"; else
+    o2="$( (cd /tmp && SVC_RUN=1 bash "$MYCACHE/cache-agent/host_start.sh" </dev/null; echo "rc=$?") 2>&1 )"; fi
 { [ "$o" = SKIP ] || { echo "$o" | grep -q 'not signed up with kms yet' && echo "$o" | grep -q 'rc=1' && ! echo "$o" | grep -q 'Starting Redis'; }; } \
-   && echo "$o2" | grep -q MATCH && [ -s "$KMS_APPROLE_DIR/mycache-cache-agent/secret_id" ] \
-    && ok "T14 no login: start.sh in startup → clear message, nothing started · agent by hand → signs up once, then fetches" || bad "T14: $(echo "$o$o2" | grep -iE 'error|info' | head -2)"
+   && { [ "$o2" = SKIP ] || { echo "$o2" | grep -q 'not signed up with kms yet' && echo "$o2" | grep -q 'rc=1'; }; } \
+    && ok "T14 no login, in startup: start.sh and cache-agent/host_start.sh → clear message, nothing started" || bad "T14: $(echo "$o$o2" | grep -iE 'error|info' | head -2)"
 
 # T15 .env is the full list: every ${KEY} docker-compose.yml needs is a line in .env
 miss=""

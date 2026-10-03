@@ -24,7 +24,6 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENT="$(cd "$HERE/../.." && pwd)"
 ENV_FILE="${REG_AGENT_CONF:-$AGENT/agent.conf}"                 # REG_*: tests point elsewhere
-[ -f "$ENV_FILE" ] && source <(grep -E '^KMS_(URL|APPROLE_DIR)=' "$ENV_FILE")
 URL="${KMS_URL:-http://127.0.0.1:8110}"
 CRED="${KMS_APPROLE_DIR:-}"; [ -n "$CRED" ] || CRED="$HERE/credentials"
 CIDRS="${KMS_ALLOWED_CIDRS:-172.28.0.0/16,127.0.0.1/32}"        # logins only from this PC / its Docker network
@@ -104,7 +103,7 @@ for line in open(path):
         v = m.group(1)
         try: v = shlex.split(v, comments=True)[0] if v else ""
         except Exception: pass
-        if v and not v.startswith("<"): sys.stdout.write(v)
+        if v and not v.startswith("<") and "/v1/kv/" not in v: sys.stdout.write(v)   # a kms address is not a value
         break
 PY
 )"

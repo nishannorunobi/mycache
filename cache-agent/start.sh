@@ -6,9 +6,10 @@
 #
 # How         (inside the container)  sh /cache-agent/start.sh
 #
-# Needs       ANTHROPIC_API_KEY in the environment — handed over by host_start.sh from kms
+# Needs       mycache's image (/opt/venv) and the agent's kms login — the secrets are
+#             fetched here by connect_external/kms/fetch_from_kms.py (agent.conf = kms addresses)
 #
-# Errors      ANTHROPIC_API_KEY not set → start it from the host: bash cache-agent/host_start.sh
+# Errors      kms sealed / not signed up → see the [kms] line; on the host: bash cache-agent/host_start.sh
 # ─────────────────────────────────────────────────────────────────────────────
 case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} n==1{ sub(/^# ?/,""); if(!t){printf "\033[1m%s\033[0m\n",$0; t=1; next} l=substr($0,1,12); if(l ~ /^[A-Z][A-Za-z ]+$/){c=(l ~ /^Errors/)?"\033[33m":"\033[36m"; printf "%s%s\033[0m%s\n",c,l,substr($0,13)} else print }' "$0"; exit 0 ;; esac
 
@@ -39,11 +40,10 @@ echo "[logging] → $LOG_FILE"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-[ -d ".venv" ]      || { printf '\033[31m[ERROR]\033[0m .venv not found. Run ./build.sh first.\n'; exit 1; }
-[ -f "agent.conf" ] || { printf '\033[31m[ERROR]\033[0m agent.conf not found. Run ./build.sh first.\n'; exit 1; }
+[ -x /opt/venv/bin/python ] || { printf '\033[31m[ERROR]\033[0m /opt/venv missing — this container is not mycache'"'"'s image: bash start.sh on the host\n'; exit 1; }
+[ -f "agent.conf" ]         || { printf '\033[31m[ERROR]\033[0m agent.conf not found.\n'; exit 1; }
 
-. ./agent.conf
-[ -n "${ANTHROPIC_API_KEY:-}" ] || { printf '\033[31m[ERROR]\033[0m ANTHROPIC_API_KEY not set — start the agent from the host: bash host_start.sh (it fetches the key from kms)\n'; exit 1; }
+set -a; . ./agent.conf; set +a      # secret values are kms addresses — fetch_from_kms.py fills them in
 
 PORT="${PORT:-8892}"
 LOG_FILE="memory/server.log"
@@ -56,7 +56,7 @@ printf '  \033[32mAPI:\033[0m  http://localhost:%s\n' "$PORT"
 printf '  \033[32mLog:\033[0m  %s\n' "$LOG_FILE"
 printf '  Press Ctrl+C to stop.\n\n'
 
-.venv/bin/uvicorn server:app \
+/opt/venv/bin/python connect_external/kms/fetch_from_kms.py /opt/venv/bin/uvicorn server:app \
     --host 0.0.0.0 \
     --port "$PORT" \
     --log-level info \
