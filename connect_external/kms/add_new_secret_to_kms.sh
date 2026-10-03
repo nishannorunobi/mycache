@@ -6,29 +6,34 @@
 #
 # Who         The kms owner (needs the kms password). mycache itself can only read.
 #
-# How         bash connect_external/kms/add_new_secret_to_kms.sh NEW_API_KEY
+# How         bash connect_external/kms/add_new_secret_to_kms.sh
+#             (it asks: key name · your kms password · the value — all but the name hidden)
 #
-# Output      kms password for nishan (hidden): ********
+# Steps       1. store the value in kms (other keys kept; same name again = new version)
+#             2. write the line in .env:  <KEY>=<its kms address>  (added, or updated)
+#
+# Output      Key name: NEW_API_KEY
+#             kms password for nishan (hidden): ********
 #             Value for NEW_API_KEY (hidden): ********
-#             [  OK  ] kv/mycache/redis  NEW_API_KEY stored (version 3)
+#             [  OK  ] kv/<entry>  NEW_API_KEY stored (version 3)
+#             [  OK  ] .env  NEW_API_KEY=http://kms-openbao:8200/v1/kv/data/<entry>
 #
 # Note        Other keys are kept. The same key name again = a new value (old versions kept).
 #
-# Next        add it to .env (the container fetches it at start):
-#             .env  NEW_API_KEY=http://kms-openbao:8200/v1/kv/data/mycache/redis
+# Next        restart it — the container fetches the new key at start
 # ─────────────────────────────────────────────────────────────────────────────
 case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} n==1{ sub(/^# ?/,""); if(!t){printf "\033[1m%s\033[0m\n",$0; t=1; next} l=substr($0,1,12); if(l ~ /^[A-Z][A-Za-z ]+$/){c=(l ~ /^Errors/)?"\033[33m":"\033[36m"; printf "%s%s\033[0m%s\n",c,l,substr($0,13)} else print }' "$0"; exit 0 ;; esac
 
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${REG_ENV_FILE:-$(cd "$HERE/../.." && pwd)/.env}"
-[ -f "$ENV_FILE" ] && source <(grep -E '^KMS_(URL|APPROLE_DIR)=' "$ENV_FILE")
-URL="${KMS_URL:-http://127.0.0.1:8110}"
+URL="${KMS_URL:-http://127.0.0.1:8110}"                     # kms as seen from THIS PC
 OWNER="${KMS_OWNER:-nishan}"
 KPATH="mycache/redis"                                 # the Redis server's own place in kms
 
 KEY="${1:-}"
-[[ "$KEY" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { echo "usage: add_new_secret_to_kms.sh <KEY>   (letters, digits, _)" >&2; exit 2; }
+[ -n "$KEY" ] || read -r -p "Key name (e.g. NEW_API_KEY): " KEY
+[[ "$KEY" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { echo "[ERROR] key name: letters, digits and _ only (got '$KEY')" >&2; exit 2; }
 h="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$URL/v1/sys/health")"
 [ "$h" = 200 ] || { echo "[ERROR] kms at $URL is not running + unsealed (health ${h:-none})" >&2; exit 1; }
 
@@ -53,4 +58,19 @@ cur=json.loads(sys.stdin.readline()); cur[sys.argv[1]]=sys.stdin.read(); print(j
     | python3 -c 'import sys,json; print(((json.load(sys.stdin).get("data")) or {}).get("version",""))' 2>/dev/null)"
 unset CUR VAL
 [ -n "$ver" ] || { echo "[ERROR] kms refused the write" >&2; exit 1; }
-echo -e "\033[32m[  OK  ]\033[0m kv/$KPATH  $KEY stored (version $ver) — in .env: $KEY=http://kms-openbao:8200/v1/kv/data/$KPATH"
+echo -e "\033[32m[  OK  ]\033[0m kv/$KPATH  $KEY stored (version $ver)"
+
+# the config line: <KEY>=<kms address> — the same kms as the lines already there
+BASE="$(grep -E '^[A-Za-z_][A-Za-z0-9_]*=https?://' "$ENV_FILE" 2>/dev/null | grep -oE 'https?://[^/ ]+/v1/kv/' | head -1)"   # real lines only, not comments; BASE="${BASE:-http://kms-openbao:8200/v1/kv/}"
+ADDR="${BASE}data/$KPATH"
+python3 - "$ENV_FILE" "$KEY" "$ADDR" <<'PY2'
+import sys, re, os
+path, key, addr = sys.argv[1:]
+lines = open(path).read().splitlines() if os.path.exists(path) else []
+pat = re.compile(r"^\s*" + re.escape(key) + r"\s*=")
+hit = [i for i, l in enumerate(lines) if pat.match(l)]
+if hit: lines[hit[0]] = f"{key}={addr}"
+else:   lines.append(f"{key}={addr}")
+open(path, "w").write("\n".join(lines) + "\n")
+PY2
+echo -e "\033[32m[  OK  ]\033[0m $(basename "$ENV_FILE")  $KEY=$ADDR"

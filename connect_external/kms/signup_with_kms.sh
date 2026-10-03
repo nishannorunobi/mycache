@@ -25,7 +25,6 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MYCACHE="$(cd "$HERE/../.." && pwd)"
 ENV_FILE="${REG_ENV_FILE:-$MYCACHE/.env}"                       # REG_*: tests point elsewhere
-[ -f "$ENV_FILE" ] && source <(grep -E '^KMS_(URL|APPROLE_DIR)=' "$ENV_FILE")
 URL="${KMS_URL:-http://127.0.0.1:8110}"
 CRED="${KMS_APPROLE_DIR:-}"; [ -n "$CRED" ] || CRED="$HERE/credentials"
 CIDRS="${KMS_ALLOWED_CIDRS:-172.28.0.0/16,127.0.0.1/32}"        # logins only from this PC / its Docker network

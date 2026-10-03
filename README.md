@@ -28,9 +28,9 @@ REDIS_PASSWORD=http://kms-openbao:8200/v1/kv/data/mycache/redis
 - `.env` (and `cache-agent/agent.conf`) list every key the containers need — plain values, and kms addresses for secrets. It
   is in git on purpose (no secret in it). A plain value instead of the address also works (a quick
   test without kms) — never commit that; `test_kms.sh` checks it.
-- **New secret?** Never into a config file: `bash connect_external/kms/add_new_secret_to_kms.sh <KEY>`
-  (cache-agent: `bash cache-agent/connect_external/kms/add_new_secret_to_kms.sh <KEY>`), then add
-  `<KEY>=http://kms-openbao:8200/v1/kv/data/mycache/redis` to `.env` (and pass it in `docker-compose.yml`).
+- **New secret?** `bash connect_external/kms/add_new_secret_to_kms.sh` (cache-agent:
+  `bash cache-agent/connect_external/kms/add_new_secret_to_kms.sh`) — it asks the name and the value,
+  stores the value in kms and writes the `.env` / `agent.conf` line for you. Then restart.
 - **See / change a secret:** kms UI http://127.0.0.1:8110/ui → Method *Username* (owner
   login) → *Secrets engines* → `kv` → `mycache` → `redis`. Or `bash
   projectspace/kms/set_secret.sh mycache/redis REDIS_PASSWORD` (hidden input).

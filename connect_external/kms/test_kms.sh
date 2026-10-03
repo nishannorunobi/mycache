@@ -194,8 +194,14 @@ grep -rnE '\.\./connect_external' --include=*.sh --include=*.py "$MYCACHE/cache-
 
 # T11 a new secret, the right way
 NEW1="new-$(head -c 9 /dev/urandom | od -An -tx1 | tr -d ' \n')"; NEW2="new-$(head -c 9 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-o1="$(printf '%s\n%s\n' "$PW" "$NEW1" | bash "$MYCACHE/connect_external/kms/add_new_secret_to_kms.sh" TEST_NEW_KEY 2>&1)"
-o2="$(printf '%s\n%s\n' "$PW" "$NEW2" | bash "$MYCACHE/cache-agent/connect_external/kms/add_new_secret_to_kms.sh" TEST_AGENT_KEY 2>&1)"
+CE="$(mktemp)"; CA="$(mktemp)"; cp "$MYCACHE/.env" "$CE"; cp "$MYCACHE/cache-agent/agent.conf" "$CA"   # copies — never the real files
+o1="$(printf 'TEST_NEW_KEY\n%s\n%s\n' "$PW" "$NEW1" | REG_ENV_FILE="$CE" bash "$MYCACHE/connect_external/kms/add_new_secret_to_kms.sh" 2>&1)"   # asks the name
+o2="$(printf '%s\n%s\n' "$PW" "$NEW2" | REG_AGENT_CONF="$CA" bash "$MYCACHE/cache-agent/connect_external/kms/add_new_secret_to_kms.sh" TEST_AGENT_KEY 2>&1)"
+lines=0; grep -qx 'TEST_NEW_KEY=http://kms-openbao:8200/v1/kv/data/mycache/redis' "$CE" && grep -qx 'TEST_AGENT_KEY=http://kms-openbao:8200/v1/kv/data/mycache/cache-agent' "$CA" \
+    && [ "$(grep -c '^REDIS_PASSWORD=' "$CE")" = 1 ] && lines=1
+o3="$(printf 'TEST_NEW_KEY\n%s\n%s\n' "$PW" "$NEW1" | REG_ENV_FILE="$CE" bash "$MYCACHE/connect_external/kms/add_new_secret_to_kms.sh" 2>&1)"
+[ "$(grep -c '^TEST_NEW_KEY=' "$CE")" = 1 ] || lines=0                                         # same name again: updated, not duplicated
+grep -qF -- "$NEW1" "$CE" "$CA" && lines=0; rm -f "$CE" "$CA"
 # server: read back inside a container (values compared by NAME, never on a command line)
 srv="$(TEST_NEW_KEY="$KADDR/mycache/redis" REDIS_PASSWORD="$KADDR/mycache/redis" X1="$NEW1" X2="$RPW" docker run --rm --network "$NET" \
         -e TEST_NEW_KEY -e REDIS_PASSWORD -e X1 -e X2 -e KMS_CREDENTIALS_DIR=/creds -v "$KMS_APPROLE_DIR/mycache-redis:/creds/mycache-redis:ro" \
@@ -203,10 +209,10 @@ srv="$(TEST_NEW_KEY="$KADDR/mycache/redis" REDIS_PASSWORD="$KADDR/mycache/redis"
         sh -c '[ "$TEST_NEW_KEY" = "$X1" ] && [ "$REDIS_PASSWORD" = "$X2" ] && echo A' 2>/dev/null)"
 out="$srv
 $(TEST_AGENT_KEY="$KADDR/mycache/cache-agent" X3="$NEW2" agent_run '[ "$TEST_AGENT_KEY" = "$X3" ] && echo B' -e TEST_AGENT_KEY -e X3 | grep -x B)"
-if [ "$out" = "$(printf 'A\nB')" ] && echo "$o1" | grep -q 'stored (version' && echo "$o2" | grep -q 'stored (version' \
+if [ "$out" = "$(printf 'A\nB')" ] && [ $lines = 1 ] && echo "$o1" | grep -q 'stored (version' && echo "$o2" | grep -q 'stored (version' \
    && ! echo "$o1$o2" | grep -qF -- "$NEW1" && ! echo "$o1$o2" | grep -qF -- "$NEW2"; then
-    ok "T11 add_new_secret_to_kms.sh (server + agent): stored in own path, readable, old keys kept, nothing printed"
-else bad "T11 add secret: '$out' / $(echo "$o1$o2" | grep -i error | head -1)"; fi
+    ok "T11 add_new_secret_to_kms.sh (server + agent): asks the name, stores in its own path, writes the config line (once), readable, nothing printed"
+else bad "T11 add secret: lines=$lines · o1: $(echo "$o1" | tail -2 | tr "\n" " ") · o2: $(echo "$o2" | tail -1)"; fi
 
 # T12 every script explains itself
 bad12=""

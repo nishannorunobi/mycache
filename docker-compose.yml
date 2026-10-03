@@ -28,10 +28,10 @@ services:
     ports:
       - "${REDIS_HOST}:${REDIS_PORT}:6379"
       - "8892:8892"
+    env_file: .env                 # every .env key reaches the container — a new secret needs no edit here
+                                   # (secret values are kms addresses → filled in by fetch_from_kms.py)
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD}    # .env: its kms address → filled in by fetch_from_kms.py
       LOG_MIRROR_ROOT: /mountspace/logs/myworkspace/projectspace/mycache
-      TZ: ${TZ}                     # same clock as the host, so host and container mirror logs line up
       PYTHONUNBUFFERED: "1"          # else the agent's output sits in the awk|tee pipe buffer
     volumes:
       - mycache-redis:/data
