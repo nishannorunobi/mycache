@@ -5,5 +5,4 @@
 
 # .env holds NO secret (they are in kms) — it is tracked in git
 
-# kms login files (role_id / secret_id) — written by connect_external/kms/signup_with_kms.sh
-connect_external/kms/credentials/
+# the kms login files are the cache-agent's: see cache-agent/.gitignore

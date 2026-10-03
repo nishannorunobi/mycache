@@ -11,32 +11,24 @@ services:
     image: mycache-redis:${REDIS_VERSION}
     container_name: mycache-redis
     restart: unless-stopped        # kms sealed at start → it stops, then retries by itself
-    # The container fetches its OWN password: .env REDIS_PASSWORD is its kms address;
-    # fetch_from_kms.py swaps it for the real value (memory only), then Redis starts.
-    # The password is never on a command line (ps / docker inspect) and never on disk:
-    # /run/redis.conf and /mycache-secrets are RAM. No password → Redis refuses to start.
-    command:
-      - /opt/venv/bin/python
-      - /connect_external/kms/fetch_from_kms.py
-      - sh
-      - -c
-      - umask 077; printf 'requirepass %s\n' "$$REDIS_PASSWORD" > /run/redis.conf && chown redis /run/redis.conf
-        && printf '%s' "$$REDIS_PASSWORD" > /mycache-secrets/redis_password && chmod 640 /mycache-secrets/redis_password
-        && exec docker-entrypoint.sh redis-server /run/redis.conf --appendonly yes
+    # The cache-agent is the entry point — Redis's assistant: it gets the password from kms
+    # (agent.conf REDIS_PASSWORD = its kms address, the agent's own login), writes it to RAM
+    # (/run/redis.conf, /mycache-secrets for the UI), starts redis-server as its child and
+    # serves its API on :8892. Never on a command line, never on disk.
+    command: ["/opt/venv/bin/python", "/cache-agent/supervisor.py"]
     tmpfs:
       - /run
     ports:
       - "${REDIS_HOST}:${REDIS_PORT}:6379"
       - "8892:8892"
-    env_file: .env                 # every .env key reaches the container — a new secret needs no edit here
-                                   # (secret values are kms addresses → filled in by fetch_from_kms.py)
+    env_file: .env                 # Redis settings (no secret — those are kms addresses in cache-agent/agent.conf)
     environment:
       LOG_MIRROR_ROOT: /mountspace/logs/myworkspace/projectspace/mycache
-      PYTHONUNBUFFERED: "1"          # else the agent's output sits in the awk|tee pipe buffer
+      PYTHONUNBUFFERED: "1"          # the agent's output reaches docker logs at once
+      PYTHONDONTWRITEBYTECODE: "1"   # no root-owned __pycache__ in the mounted cache-agent/ folder
     volumes:
       - mycache-redis:/data
-      - ./cache-agent:/cache-agent
-      - ./connect_external/kms:/connect_external/kms:ro   # fetch_from_kms.py + this login (credentials/)
+      - ./cache-agent:/cache-agent                        # the agent + its kms login (connect_external/kms/credentials/)
       - mycache-secrets:/mycache-secrets                  # RAM: the password for the Redis UI
       - ../../mountspace/logs:/mountspace/logs
     networks:

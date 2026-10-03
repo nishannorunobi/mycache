@@ -1,25 +1,24 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────────────────
-# host_start.sh — start the cache-agent (AI helper, :8892) from the host
+# host_start.sh — make sure the cache-agent (Redis's assistant, :8892) is running
 #
-# What for    Run the agent inside the mycache-redis container.
+# What for    The agent is the mycache container's entry point: it starts with Redis and
+#             stays on. So "start the agent" = make sure the container runs.
 #
-# Who         You (it is not started by default).
+# Who         You, or the workspace startup (svcmgt).
 #
 # How         bash cache-agent/host_start.sh
 #
 # Steps       1. already answering on :8892 → nothing to do
-#             2. first time only: sign the agent up with kms (asks your kms password)
-#             3. start it in the container: fetch_from_kms.py fills in its secrets
-#                (agent.conf values are kms addresses), then uvicorn — Python from the image
+#             2. container not running → bash ../start.sh (signs the agent up once, by hand)
+#             3. wait until :8892 answers (the supervisor restarts the API by itself)
 #
 # Output      [OK] Cache agent running on :8892
 #
-# Errors      kms is SEALED          → unseal kms, run again (reason in the log below)
-#             not signed up, no terminal → run bash cache-agent/host_start.sh by hand once
-#             container not running   → bash start.sh
+# Errors      container up but no answer → docker logs mycache-redis ([agent] lines say why:
+#                                          kms sealed / not signed up / key missing)
 #
-# Next        bash cache-agent/host_status.sh  ·  bash cache-agent/host_stop.sh
+# Next        bash cache-agent/host_status.sh  ·  stop = bash stop.sh (Redis and agent together)
 # ─────────────────────────────────────────────────────────────────────────────
 case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} n==1{ sub(/^# ?/,""); if(!t){printf "\033[1m%s\033[0m\n",$0; t=1; next} l=substr($0,1,12); if(l ~ /^[A-Z][A-Za-z ]+$/){c=(l ~ /^Errors/)?"\033[33m":"\033[36m"; printf "%s%s\033[0m%s\n",c,l,substr($0,13)} else print }' "$0"; exit 0 ;; esac
 
@@ -51,47 +50,16 @@ if curl -fsS --max-time 3 -o /dev/null "http://localhost:8892/health" 2>/dev/nul
 fi
 
 CONTAINER="mycache-redis"
-AGENT_DIR="/cache-agent"
-
-# The agent fetches its OWN secrets inside the container (connect_external/kms/fetch_from_kms.py,
-# its own login). This PC only makes sure the agent has its kms login — once, by hand: it asks
-# your kms password, so never inside startup / shutdown (SVC_RUN) and never without a terminal.
-if ! ls "$SCRIPT_DIR"/connect_external/kms/credentials/*/secret_id >/dev/null 2>&1; then
-    { [ -z "${SVC_RUN:-}" ] && [ -t 0 ]; } \
-        || { echo "[ERROR] cache-agent is not signed up with kms yet — run by hand once: bash $SCRIPT_DIR/host_start.sh" >&2; exit 1; }
-    bash "$SCRIPT_DIR/connect_external/kms/signup_with_kms.sh" || exit 1
-fi
-
 if ! docker inspect "$CONTAINER" --format '{{.State.Running}}' 2>/dev/null | grep -q true; then
-    echo "[ERROR] Container $CONTAINER is not running." >&2
-    exit 1
+    echo "[INFO] $CONTAINER is not running — starting mycache (the agent is its entry point)"
+    bash "$SCRIPT_DIR/../start.sh" --no-ui || exit 1
 fi
 
-# Python + packages come from mycache's image (/opt/venv) — nothing is built at run time.
-
-# Kill any existing cache-agent uvicorn (idempotent).
-# The [u]vicorn bracket trick prevents pkill from matching its own command line.
-docker exec "$CONTAINER" sh -c \
-    "pkill -f '[u]vicorn server:app' 2>/dev/null; sleep 0.3; echo ok"
-
-# Start fresh; route logs to mountspace on the host via nohup+disown.
-mkdir -p "$(dirname "$LOG_FILE")"
-touch "$LOG_FILE" 2>/dev/null || true   # create if possible; never abort
-docker exec "$CONTAINER" sh -c \
-    "cd $AGENT_DIR && set -a && . ./agent.conf && set +a && \
-     exec /opt/venv/bin/python connect_external/kms/fetch_from_kms.py /opt/venv/bin/uvicorn server:app \
-        --host 0.0.0.0 --port \${PORT:-8892} \
-        --no-use-colors --access-log" \
-    < /dev/null 2>&1 \
-    | awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }' >> "$LOG_FILE" 2>/dev/null &   # file only: never hold the caller's output pipe
-disown
-
-# Say OK only when the agent really answers — the launch above returns at once even if
-# uvicorn dies a second later (e.g. kms sealed: the reason is in the log).
+# The supervisor inside starts the API and restarts it if it dies — only wait for it.
 for _ in $(seq 1 30); do
     curl -fsS --max-time 2 -o /dev/null "http://localhost:8892/health" 2>/dev/null && { echo "[OK] Cache agent running on :8892"; exit 0; }
     sleep 1
 done
-echo "[ERROR] Cache agent did not come up on :8892 — its output:"
-tail -5 "$LOG_FILE" 2>/dev/null | sed -E 's/^(\[[0-9-]+ [0-9:]+\] )+/    /'
+echo "[ERROR] the cache-agent does not answer on :8892 — why: docker logs --tail 20 $CONTAINER" >&2
+docker logs --tail 5 "$CONTAINER" 2>&1 | grep '\[agent\]' >&2 || true
 exit 1

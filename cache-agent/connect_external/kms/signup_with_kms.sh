@@ -36,6 +36,7 @@ declare -A READS=(
 # secrets to copy into kms the first time: kv path · key · local file
 MOVES=(
     "shared/anthropic ANTHROPIC_API_KEY $ENV_FILE"
+    "mycache/redis REDIS_PASSWORD $ENV_FILE"       # a kms address there (the normal case) is skipped
 )
 
 ok()  { echo -e "\033[32m[  OK  ]\033[0m $*"; }

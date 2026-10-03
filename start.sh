@@ -2,17 +2,18 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # start.sh — start mycache: the Redis cache (+ web UI on :8081)
 #
-# What for    Start Redis. The container fetches its own password from kms at start
-#             (.env REDIS_PASSWORD = its kms address) — never from a file.
+# What for    Start Redis. The cache-agent is the container's entry point: it gets the
+#             password from kms (cache-agent/agent.conf = kms addresses), starts Redis
+#             and serves its API on :8892 — never a password from a file.
 #
 # Who         You, or the workspace startup (via ensure_running.sh).
 #
 # How         bash start.sh             Redis + web UI
 #             bash start.sh --no-ui     Redis only
 #
-# Steps       1. first time only: sign mycache up with kms (asks your kms password)
+# Steps       1. first time only: sign the cache-agent up with kms (asks your kms password)
 #             2. docker compose up -d — builds the image once (internet once), then:
-#                inside: fetch_from_kms.py → REDIS_PASSWORD from kms → Redis starts
+#                inside: cache-agent/supervisor.py → kms → Redis + the agent API
 #
 # Output      ==> Redis is up
 #                 Password  : in kms (kv/mycache/redis)
@@ -20,6 +21,7 @@
 # Errors      kms is SEALED          → unseal kms — the container retries by itself
 #                                     (see why: docker logs mycache-redis)
 #             not signed up, in startup → run bash start.sh by hand once
+#             the agent / Redis failed  → docker logs mycache-redis ([agent] lines say why)
 #
 # Next        bash status.sh  ·  bash stop.sh
 # ─────────────────────────────────────────────────────────────────────────────
@@ -42,15 +44,15 @@ GREEN="\033[32m"; YELLOW="\033[33m"; BOLD="\033[1m"; RESET="\033[0m"
 
 [ -f ".env" ] || { echo -e "\033[31m[ERROR]${RESET} .env not found."; exit 1; }
 
-source .env      # settings; REDIS_PASSWORD is only its kms address
+source .env      # Redis settings — no secret
 
-# The container fetches its own secrets (connect_external/kms/fetch_from_kms.py). This PC only
-# makes sure mycache has its kms login — once, by hand: it asks your kms password, so never
-# inside startup / shutdown (SVC_RUN) and never without a terminal.
-if ! ls connect_external/kms/credentials/*/secret_id >/dev/null 2>&1; then
+# The cache-agent fetches the secrets inside the container (its connect_external/kms/). This PC
+# only makes sure the agent has its kms login — once, by hand: it asks your kms password, so
+# never inside startup / shutdown (SVC_RUN) and never without a terminal.
+if ! ls cache-agent/connect_external/kms/credentials/*/secret_id >/dev/null 2>&1; then
     { [ -z "${SVC_RUN:-}" ] && [ -t 0 ]; } \
-        || { echo -e "\033[31m[ERROR]${RESET} mycache is not signed up with kms yet — run by hand once: bash $SCRIPT_DIR/start.sh"; exit 1; }
-    bash connect_external/kms/signup_with_kms.sh || exit 1
+        || { echo -e "\033[31m[ERROR]${RESET} the cache-agent is not signed up with kms yet — run by hand once: bash $SCRIPT_DIR/start.sh"; exit 1; }
+    bash cache-agent/connect_external/kms/signup_with_kms.sh || exit 1
 fi
 
 # --no-ui starts the broker only, leaving redis-commander (mycache-redis-ui) down.
@@ -69,8 +71,9 @@ fi
 echo ""
 echo -e "${GREEN}${BOLD}==> Redis is up${RESET}"
 echo -e "    Host      : ${BOLD}${REDIS_HOST}:${REDIS_PORT}${RESET}"
-KMS_ENTRY="$(grep -oE '/v1/kv/data/[^ ]+' .env | head -1)"     # where the container reads it (no value)
-echo -e "    Password  : ${BOLD}in kms${RESET} (${KMS_ENTRY#/v1/} — fetched by the container)"
+KMS_ENTRY="$(grep -E '^REDIS_PASSWORD=' cache-agent/agent.conf | grep -oE '/v1/kv/data/[^ ]+' | head -1)"   # where (no value)
+echo -e "    Password  : ${BOLD}in kms${RESET} (${KMS_ENTRY#/v1/} — fetched by the cache-agent)"
+echo -e "    Agent     : ${BOLD}http://localhost:8892${RESET} (Redis's assistant — always on)"
 echo -e "    URL       : ${BOLD}redis://:<password>@localhost:${REDIS_PORT}/0${RESET}"
 echo ""
 echo -e "    ${BOLD}./logs.sh${RESET}    — tail logs"
