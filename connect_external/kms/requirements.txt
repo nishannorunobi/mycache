@@ -1,0 +1,2 @@
+# kms client used INSIDE the container by fetch_from_kms.py (baked into the image)
+hvac

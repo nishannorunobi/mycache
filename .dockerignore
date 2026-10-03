@@ -1,0 +1,4 @@
+# only the two requirements files are needed to build the image — never send secrets or data
+*
+!connect_external/kms/requirements.txt
+!cache-agent/requirements.txt

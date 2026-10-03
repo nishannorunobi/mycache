@@ -14,8 +14,8 @@
 #
 # Note        Other keys are kept. The same key name again = a new value (old versions kept).
 #
-# Next        use it in start.sh:
-#             kms_get mycache-redis mycache/redis REDIS_PASSWORD NEW_API_KEY || exit 1
+# Next        add it to .env (the container fetches it at start):
+#             .env  NEW_API_KEY=http://kms-openbao:8200/v1/kv/data/mycache/redis
 # ─────────────────────────────────────────────────────────────────────────────
 case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} n==1{ sub(/^# ?/,""); if(!t){printf "\033[1m%s\033[0m\n",$0; t=1; next} l=substr($0,1,12); if(l ~ /^[A-Z][A-Za-z ]+$/){c=(l ~ /^Errors/)?"\033[33m":"\033[36m"; printf "%s%s\033[0m%s\n",c,l,substr($0,13)} else print }' "$0"; exit 0 ;; esac
 
@@ -53,4 +53,4 @@ cur=json.loads(sys.stdin.readline()); cur[sys.argv[1]]=sys.stdin.read(); print(j
     | python3 -c 'import sys,json; print(((json.load(sys.stdin).get("data")) or {}).get("version",""))' 2>/dev/null)"
 unset CUR VAL
 [ -n "$ver" ] || { echo "[ERROR] kms refused the write" >&2; exit 1; }
-echo -e "\033[32m[  OK  ]\033[0m kv/$KPATH  $KEY stored (version $ver) — read it with: kms_get mycache-redis $KPATH $KEY"
+echo -e "\033[32m[  OK  ]\033[0m kv/$KPATH  $KEY stored (version $ver) — in .env: $KEY=http://kms-openbao:8200/v1/kv/data/$KPATH"

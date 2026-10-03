@@ -11,7 +11,8 @@
 # Steps       1. log in to kms as the owner
 #             2. policy + AppRole mycache-redis → may READ kv/mycache/redis only
 #             3. login files → credentials/mycache-redis/ (git-ignored, 600)
-#             4. first time: copy REDIS_PASSWORD from .env into kms
+#             4. first time: copy REDIS_PASSWORD from .env into kms (only a real value —
+#                a kms address, http://…/v1/kv/…, is skipped)
 #
 # Output      [  OK  ] mycache-redis — may read: mycache/redis · new login
 #             [  OK  ] mycache (Redis server) registered with kms
@@ -104,7 +105,7 @@ for line in open(path):
         v = m.group(1)
         try: v = shlex.split(v, comments=True)[0] if v else ""
         except Exception: pass
-        if v and not v.startswith("<"): sys.stdout.write(v)
+        if v and not v.startswith("<") and "/v1/kv/" not in v: sys.stdout.write(v)   # a kms address is not a value
         break
 PY
 )"

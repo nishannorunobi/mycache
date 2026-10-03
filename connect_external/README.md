@@ -5,7 +5,7 @@ over the **network (its API)** — mycache never uses a file of another project.
 
 | Folder | Component | How | Used by |
 |---|---|---|---|
-| `kms/` | kms (OpenBao) — secrets | HTTP API `http://127.0.0.1:8110` · sign up once: `signup_with_kms.sh` | `start.sh` (REDIS_PASSWORD) |
+| `kms/` | kms (OpenBao) — secrets | HTTP API (the address is in each `.env` value) · sign up once: `signup_with_kms.sh` | the Redis container: `fetch_from_kms.py` (REDIS_PASSWORD) |
 
 The cache-agent is a separate component and keeps its own: `cache-agent/connect_external/`.
 
