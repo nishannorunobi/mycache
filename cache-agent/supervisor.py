@@ -17,13 +17,10 @@
 #                addresses and asks kms itself per new Redis connection (rotation-proof)
 #             5. watch: Redis exits → this exits too (compose restarts the container)
 #                       API exits   → started again after 2 s
-#                       every 60 s  → a NEW REDIS_PASSWORD in kms? tell Redis (ACL): the new
-#                                     one works at once, the old one until the next restart
 #                       SIGTERM     → Redis saves and stops, then the API, then exit 0
 #
 # Output      [agent] REDIS_PASSWORD ← kms (mycache/redis)      names only, never values
 #             [agent] redis-server started (pid 12) · [agent] API started on :8892 (pid 20)
-#             [agent] REDIS_PASSWORD rotated — Redis accepts the new one (the old until restart)
 #
 # Errors      kms SEALED / unreachable / no login / no access / key missing → exit 1
 #             with the reason; compose restarts the container, so unsealing is enough
@@ -42,7 +39,6 @@ import kms  # noqa: E402
 
 REDIS_CONF = "/run/redis.conf"
 UI_SECRET = "/mycache-secrets/redis_password"
-WATCH_SECONDS = int(os.environ.get("KMS_WATCH_SECONDS") or 60)      # test switch only
 
 
 def say(msg):
@@ -100,16 +96,12 @@ def fetch(env):
     return secrets
 
 
-def write_password_files(password):
-    write_private(REDIS_CONF, f"requirepass {password}\n", owner="redis", mode=0o600)
-    write_private(UI_SECRET, password, mode=0o640)
-
-
 def start_redis(password):
     if not password:
         say("ERROR: REDIS_PASSWORD is empty — Redis is not started without a password")
         sys.exit(1)
-    write_password_files(password)
+    write_private(REDIS_CONF, f"requirepass {password}\n", owner="redis", mode=0o600)
+    write_private(UI_SECRET, password, mode=0o640)
     p = subprocess.Popen(["docker-entrypoint.sh", "redis-server", REDIS_CONF, "--appendonly", "yes"], cwd="/data")
     say(f"redis-server started (pid {p.pid})")
     return p
@@ -126,33 +118,6 @@ def start_api(env, secrets):
     return p
 
 
-def rotate_if_changed(env, current, state):
-    """Every WATCH_SECONDS: a new REDIS_PASSWORD in kms → Redis accepts it too (ACL). Returns the current one."""
-    if not kms.is_address(env.get("REDIS_PASSWORD", "")):
-        return current                         # a plain value: nothing to watch
-    try:
-        new = kms.read(env["REDIS_PASSWORD"], fresh=True).get("REDIS_PASSWORD", "")
-    except kms.KmsError as e:
-        if not state.get("warned"):
-            say(f"WARN: cannot check kms ({e}) — keeping the current password")
-            state["warned"] = True
-        return current
-    state["warned"] = False
-    if not new or new == current:
-        return current
-    import redis
-    try:
-        r = redis.Redis(host="127.0.0.1", port=6379, password=current, socket_timeout=5)
-        r.execute_command("ACL", "SETUSER", "default", ">" + new)      # new in; the old stays until restart
-        r.close()
-    except Exception as e:
-        say(f"WARN: Redis did not take the new password ({type(e).__name__}) — trying again in {WATCH_SECONDS} s")
-        return current
-    write_password_files(new)
-    say("REDIS_PASSWORD rotated — Redis accepts the new one (the old until the next restart)")
-    return new
-
-
 def main(argv):
     if len(argv) > 1 and argv[1] in ("-h", "--help"):
         usage()
@@ -164,7 +129,6 @@ def main(argv):
     redis_p = start_redis(current)
     api_p = start_api(env, secrets)
     del secrets
-    watch_state, last_check = {}, time.monotonic()
 
     stopping = {"now": False}
 
@@ -197,9 +161,6 @@ def main(argv):
             say(f"API exited ({api_p.returncode}) — starting it again in 2 s (restart {api_restarts})")
             time.sleep(2)
             api_p = start_api(env, {})
-        if time.monotonic() - last_check >= WATCH_SECONDS:
-            last_check = time.monotonic()
-            current = rotate_if_changed(env, current, watch_state)
         time.sleep(1)
 
 

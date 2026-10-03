@@ -7,8 +7,8 @@
 #             This module turns such addresses into the real values, with the
 #             agent's own kms login (credentials/<login>/ — exactly one).
 #
-# Who         supervisor.py (at start, and every minute to spot a new password)
-#             server.py (its own Redis connections: redis-py CredentialProvider)
+# Who         supervisor.py (at start) · server.py (its own Redis connections: redis-py
+#             CredentialProvider — a refused password → one fresh read, then retry)
 #
 # How         import kms
 #             secrets, where = kms.resolve(env)      # {NAME: value}, {NAME: "kv/data/…"}
@@ -16,7 +16,8 @@
 #
 # Steps       1. a value with /v1/kv/ in it is a kms address (base + entry)
 #             2. health: sealed / unreachable → KmsError with the reason
-#             3. log in (role_id + secret_id → 1-hour pass), read the entry, cache it 60 s
+#             3. log in (role_id + secret_id → 1-hour pass), read the entry, keep it
+#                (read again only when asked: fresh=True, e.g. after Redis refused the password)
 #             4. the key inside the entry = the env name
 #
 # Output      nothing printed here — callers print names only, never values
@@ -30,12 +31,10 @@
 import os
 import re
 import threading
-import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CRED = os.environ.get("KMS_CREDENTIALS_DIR") or os.path.join(HERE, "credentials")   # test switch only
 ADDRESS = re.compile(r"^(https?://[^/]+)/v1/(kv/.+)$")
-CACHE_SECONDS = int(os.environ.get("KMS_CACHE_SECONDS") or 60)      # test switch only
 
 
 class KmsError(Exception):
@@ -92,10 +91,10 @@ class _Client:
         self.login_name = name
 
     def read(self, api_path, fresh=False):
-        """api_path like 'kv/data/mycache/redis' → the entry's keys (cached 60 s)."""
+        """api_path like 'kv/data/mycache/redis' → the entry's keys (kept until fresh=True)."""
         with self._lock:
             hit = self._cache.get(api_path)
-            if hit and not fresh and time.monotonic() - hit[0] < CACHE_SECONDS:
+            if hit and not fresh:
                 return dict(hit[1])
             self._health()
             if self._client is None:
@@ -112,7 +111,7 @@ class _Client:
                     raise KmsError(f"{getattr(self, 'login_name', 'this login')} may not read {api_path[len('kv/data/'):]}, or it does not exist")
             if not isinstance(data, dict):
                 raise KmsError(f"{api_path[len('kv/data/'):]} is empty in kms")
-            self._cache[api_path] = (time.monotonic(), data)
+            self._cache[api_path] = (True, data)
             return dict(data)
 
 

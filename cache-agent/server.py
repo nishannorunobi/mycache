@@ -4,8 +4,8 @@ Cache Agent HTTP Server — runs inside mycache-redis container on port 8892
 
 Secrets: never kept here. REDIS_PASSWORD / ANTHROPIC_API_KEY in the environment are
 kms ADDRESSES (agent.conf); connect_external/kms/kms.py turns them into values when
-needed (cached 60 s). Redis connections use a redis-py CredentialProvider, so a
-password rotated in kms is picked up by the next new connection — no restart.
+needed. Redis connections use a redis-py CredentialProvider: if Redis refuses the
+password, the agent reads kms once more and retries — no restart.
 
 Endpoints:
   GET  /health              liveness + Redis ping status
@@ -40,7 +40,7 @@ REDIS_PORT_INT = 6379
 
 
 def _secret(name: str, fresh: bool = False) -> str:
-    """The value behind NAME: a kms address (normal) → kms, cached 60 s; a plain value → as is."""
+    """The value behind NAME: a kms address (normal) → kms (read once, kept); a plain value → as is."""
     v = os.getenv(name, "")
     if kms.is_address(v):
         return kms.read(v, fresh=fresh).get(name, "")
@@ -67,7 +67,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 
 def _redis_cmd(*args) -> str:
     # In-process (redis-py): no password on any command line. If Redis refuses the
-    # cached password (rotated less than a minute ago), ask kms once more and retry.
+    # password it knows (changed meanwhile), ask kms once more and retry.
     try:
         out = _r.execute_command(*args)
     except redis.exceptions.AuthenticationError:
