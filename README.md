@@ -1,12 +1,13 @@
 # mycache
 
 Redis cache for the workspace (Plane uses it) + **redis-commander** (web UI, :8081) +
-**cache-agent** (AI helper, :8892, runs inside the Redis container).
+**cache-agent** (:8892) — the container's **entry point**, Redis's assistant: it fetches the
+password from kms, runs Redis as its child, keeps a rotated password live, and answers on :8892.
 
 ```
-bash start.sh [--no-ui]   # start Redis (+ UI)        bash stop.sh    # stop (data kept)
-bash status.sh            # containers                bash logs.sh    # tail logs
-bash cache-agent/host_start.sh                         # start the cache-agent
+bash start.sh [--no-ui]   # start Redis + its agent (+ UI)     bash stop.sh    # stop all (data kept)
+bash status.sh            # containers                         bash logs.sh    # tail logs
+bash cache-agent/host_status.sh                                 # the agent (it runs with Redis)
 ```
 
 ## 🔑 Where are the secrets?

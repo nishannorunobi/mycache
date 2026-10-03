@@ -5,4 +5,4 @@ Everything here talks over the **network (APIs)** — no file of another project
 
 | Folder | Component | How | Used by |
 |---|---|---|---|
-| `kms/` | kms (OpenBao) — secrets | HTTP API (the address is in each `agent.conf` value) · sign up once: `signup_with_kms.sh` (or `host_start.sh` by hand) | the agent in the container: `fetch_from_kms.py` (ANTHROPIC_API_KEY, REDIS_PASSWORD) |
+| `kms/` | kms (OpenBao) — secrets | HTTP API (the address is in each `agent.conf` value) · sign up once: `signup_with_kms.sh` (or `../start.sh` by hand) | `kms.py`: `supervisor.py` at start + every 60 s (rotation), `server.py` per Redis connection |
