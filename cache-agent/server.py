@@ -21,7 +21,6 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
@@ -30,8 +29,7 @@ import redis
 from redis.credentials import CredentialProvider
 from pydantic import BaseModel
 
-AGENT_DIR = Path(__file__).parent
-load_dotenv(AGENT_DIR / "agent.conf")
+AGENT_DIR = Path(__file__).parent        # settings + kms addresses arrive by env (supervisor.py reads agent.conf)
 sys.path.insert(0, str(AGENT_DIR / "connect_external" / "kms"))
 import kms  # noqa: E402
 
