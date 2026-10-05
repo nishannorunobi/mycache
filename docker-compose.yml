@@ -14,6 +14,7 @@ services:
       dockerfile: dockerspace/Dockerfile
       args:
         REDIS_VERSION: ${REDIS_VERSION}
+        REDIS_DIGEST: ${REDIS_DIGEST}
     image: mycache-redis:${REDIS_VERSION}
     container_name: mycache-redis
     restart: unless-stopped        # kms sealed at start → it stops, then retries by itself
@@ -50,7 +51,7 @@ services:
   # ── Redis Commander (web UI) ──────────────────────────────────────────────────
   redis-commander:
     logging: *logs
-    image: rediscommander/redis-commander:latest
+    image: rediscommander/redis-commander:latest@sha256:19cd0c49f418779fa2822a0496c5e6516d0c792effc39ed20089e6268477e40a   # pinned by digest (CLAUDEWORK-5)
     container_name: mycache-redis-ui
     # the password comes from the Redis container (RAM volume), into env only — never argv
     entrypoint:

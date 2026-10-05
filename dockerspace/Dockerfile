@@ -20,7 +20,8 @@
 # Next        docker compose up -d
 # ─────────────────────────────────────────────────────────────────────────────
 ARG REDIS_VERSION=7-alpine
-FROM redis:${REDIS_VERSION}
+ARG REDIS_DIGEST=sha256:520775a41a63e77e06c73e35d2fd9cc15921a609516818796b4ecbb813078bc7
+FROM redis:${REDIS_VERSION}@${REDIS_DIGEST}
 
 RUN apk add --no-cache python3 \
  && python3 -m venv /opt/venv
