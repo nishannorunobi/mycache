@@ -1,7 +1,13 @@
+# ── Container logs capped (CLAUDEWORK-4): json-file logs otherwise grow without bound in /var/lib/docker ──
+x-logging: &logs
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
 services:
 
   # ── Redis Cache ───────────────────────────────────────────────────────────────
   redis:
+    logging: *logs
     # mycache's own image = Redis + Python (dockerspace/Dockerfile) — built once, then offline
     build:
       context: .
@@ -43,6 +49,7 @@ services:
 
   # ── Redis Commander (web UI) ──────────────────────────────────────────────────
   redis-commander:
+    logging: *logs
     image: rediscommander/redis-commander:latest
     container_name: mycache-redis-ui
     # the password comes from the Redis container (RAM volume), into env only — never argv
