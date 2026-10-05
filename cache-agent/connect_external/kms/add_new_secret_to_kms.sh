@@ -18,7 +18,11 @@
 #             [  OK  ] kv/<entry>  NEW_API_KEY stored (version 3)
 #             [  OK  ] agent.conf  NEW_API_KEY=http://kms-openbao:8200/v1/kv/data/<entry>
 #
-# Note        Stored in the agent's own place kv/mycache/cache-agent. Shared keys are not written here.
+# Note        A key agent.conf already points at (REDIS_PASSWORD → kv/mycache/redis) goes to THAT entry
+#             (same name again = a new version); a new key goes to the agent's own kv/mycache/cache-agent.
+#
+# Also        refresh_random_secrets_to_kms.sh hands the value (KMS_NEW_SECRET_VALUE) and its one kms
+#             login (KMS_TOKEN) over by name instead of asking — the only other caller.
 #
 # Next        restart it — the container fetches the new key at start
 # ─────────────────────────────────────────────────────────────────────────────
@@ -31,23 +35,30 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${REG_AGENT_CONF:-$(cd "$HERE/../.." && pwd)/agent.conf}"
 URL="${KMS_URL:-http://127.0.0.1:8110}"                     # kms as seen from THIS PC
 OWNER="${KMS_OWNER:-nishan}"
-KPATH="mycache/cache-agent"                           # the agent's own place in kms
+OWN_PATH="mycache/cache-agent"                        # the agent's own entry for NEW keys
 
 KEY="${1:-}"
 [ -n "$KEY" ] || read -r -p "Key name (e.g. NEW_API_KEY): " KEY
 [[ "$KEY" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { echo "[ERROR] key name: letters, digits and _ only (got '$KEY')" >&2; exit 2; }
+# where it lives: the entry agent.conf already names for this key (REDIS_PASSWORD → mycache/redis), else the agent's own entry
+KPATH="$(grep -E "^$KEY=https?://" "$ENV_FILE" 2>/dev/null | grep -oE '/v1/kv/data/[^ ]+' | head -1 | sed 's#^/v1/kv/data/##')"
+KPATH="${KPATH:-$OWN_PATH}"
 h="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$URL/v1/sys/health")"
 [ "$h" = 200 ] || { echo "[ERROR] kms at $URL is not running + unsealed (health ${h:-none})" >&2; exit 1; }
 
-ask "kms password for $OWNER (hidden): "; read -r -s pw; echo >&2
-TOKEN="$(printf '%s' "$pw" | python3 -c 'import sys,json; print(json.dumps({"password": sys.stdin.read()}))' \
-    | curl -s -X POST --data @- "$URL/v1/auth/userpass/login/$OWNER" \
-    | python3 -c 'import sys,json; print((json.load(sys.stdin).get("auth") or {}).get("client_token",""))' 2>/dev/null)"
-unset pw
-[ -n "$TOKEN" ] || { echo "[ERROR] kms login failed for $OWNER" >&2; exit 1; }
-trap 'curl -s -o /dev/null -X POST -H @<(printf "X-Vault-Token: %s\n" "$TOKEN") "$URL/v1/auth/token/revoke-self"; unset TOKEN VAL' EXIT
+if [ -n "${KMS_TOKEN:-}" ]; then TOKEN="$KMS_TOKEN"; MINE=                    # handed over by refresh_random_secrets_to_kms.sh (one login, several keys)
+else
+    ask "kms password for $OWNER (hidden): "; read -r -s pw; echo >&2
+    TOKEN="$(printf '%s' "$pw" | python3 -c 'import sys,json; print(json.dumps({"password": sys.stdin.read()}))' \
+        | curl -s -X POST --data @- "$URL/v1/auth/userpass/login/$OWNER" \
+        | python3 -c 'import sys,json; print((json.load(sys.stdin).get("auth") or {}).get("client_token",""))' 2>/dev/null)"
+    unset pw; MINE=1
+    [ -n "$TOKEN" ] || { echo "[ERROR] kms login failed for $OWNER" >&2; exit 1; }
+fi
+trap '[ -n "$MINE" ] && curl -s -o /dev/null -X POST -H @<(printf "X-Vault-Token: %s\n" "$TOKEN") "$URL/v1/auth/token/revoke-self"; unset TOKEN VAL' EXIT
 
-ask "Value for $KEY (hidden): "; read -r -s VAL; echo >&2
+if [ -n "${KMS_NEW_SECRET_VALUE:-}" ]; then VAL="$KMS_NEW_SECRET_VALUE"; unset KMS_NEW_SECRET_VALUE     # handed over by name (refresh script)
+else ask "Value for $KEY (hidden): "; read -r -s VAL; echo >&2; fi
 [ -n "$VAL" ] || { echo "[ERROR] empty value — nothing stored" >&2; exit 1; }
 
 # keys already at kv/mycache/cache-agent (kept) + the new one — both via stdin, never argv / env
@@ -63,7 +74,8 @@ unset CUR VAL
 echo -e "\033[32m[  OK  ]\033[0m kv/$KPATH  $KEY stored (version $ver)"
 
 # the config line: <KEY>=<kms address> — the same kms as the lines already there
-BASE="$(grep -E '^[A-Za-z_][A-Za-z0-9_]*=https?://' "$ENV_FILE" 2>/dev/null | grep -oE 'https?://[^/ ]+/v1/kv/' | head -1)"   # real lines only, not comments; BASE="${BASE:-http://kms-openbao:8200/v1/kv/}"
+BASE="$(grep -E '^[A-Za-z_][A-Za-z0-9_]*=https?://' "$ENV_FILE" 2>/dev/null | grep -oE 'https?://[^/ ]+/v1/kv/' | head -1)"   # real lines only, not comments
+BASE="${BASE:-http://kms-openbao:8200/v1/kv/}"
 ADDR="${BASE}data/$KPATH"
 python3 - "$ENV_FILE" "$KEY" "$ADDR" <<'PY2'
 import sys, re, os

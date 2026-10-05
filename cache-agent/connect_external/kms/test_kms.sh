@@ -24,6 +24,7 @@
 #             T5  empty password → not started · T16 a plain value is used as written
 #             T8  static: nothing printed, tracked .env / agent.conf secret-free, credentials
 #                 ignored, one kms folder (the agent's) · T11 add_new_secret_to_kms.sh
+#                 · T11b refresh_random_secrets_to_kms.sh: new random value in kms AND Redis, old refused, value never shown
 #             T12 every script explains itself · T14 no login, in startup → message
 #             T15 .env lists every key compose needs · T2 kms sealed → exits with SEALED
 #             T10 no test value in logs / git
@@ -255,6 +256,19 @@ docker rm -f "$R" >/dev/null
 [ $lines = 1 ] && [ "${seen:-0}" -ge 1 ] && [ "${leak11:-1}" = 0 ] && echo "$o2" | grep -q 'stored (version' && ! echo "$o2$o3" | grep -qF -- "$NEW2" \
     && ok "T11 add_new_secret_to_kms.sh: asks the name, stores it, writes the agent.conf line once; the API gets the ADDRESS (never the value) by env; nothing printed" \
     || bad "T11 add secret: lines=$lines seen=${seen:-?} leak=${leak11:-?} · $(echo "$o2" | tail -1)"
+
+# ── T11b: refresh_random_secrets_to_kms.sh against the throwaway (kms + Redis restart; the agent follows) ──
+run_mycache "$CONF_OK"; healthy
+CA="$(mktemp)"; printf '%s\n' "$CONF_OK" > "$CA"
+o11="$(printf '%s\n' "$PW" | REDIS_CONTAINER="$R" REG_AGENT_CONF="$CA" bash "$AGENT/connect_external/kms/refresh_random_secrets_to_kms.sh" 2>&1)"; r11=$?
+OT="$(owner_token)"; NEWV="$(curl -s -H @<(printf 'X-Vault-Token: %s\n' "$OT") "$KMS_URL/v1/kv/data/mycache/redis" | j 'd["data"]["data"]["REDIS_PASSWORD"]')"; unset OT
+n11="$(REDISCLI_AUTH="$NEWV" docker exec -e REDISCLI_AUTH "$R" redis-cli ping 2>&1)"; o11b="$(REDISCLI_AUTH="$RPW" docker exec -e REDISCLI_AUTH "$R" redis-cli ping 2>&1)"
+h11="$(api)"
+if [ $r11 = 0 ] && [ -n "$NEWV" ] && [ "$NEWV" != "$RPW" ] && [ "$n11" = PONG ] && echo "$o11b" | grep -qiE 'WRONGPASS|NOAUTH|invalid' \
+   && echo "$o11" | grep -q 'Redis has the new password' && ! echo "$o11" | grep -qF -- "$NEWV" && echo "$h11" | grep -q '"redis_running":true'; then
+    ok "T11b refresh_random_secrets_to_kms.sh: new random value in kms AND Redis (restart), old refused, the agent follows, value never shown"
+else bad "T11b refresh: rc=$r11 new='$n11' old='$(echo "$o11b" | head -1)' · $(echo "$o11" | tail -6 | tr '\n' '¦')"; fi
+rm -f "$CA"; docker rm -f "$R" >/dev/null; RPW="$NEWV"; unset NEWV     # later tests use the current kms value
 
 # ── T12 every script explains itself ─────────────────────────────────────────
 bad12=""
