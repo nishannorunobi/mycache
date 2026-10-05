@@ -34,7 +34,7 @@ import threading
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CRED = os.environ.get("KMS_CREDENTIALS_DIR") or os.path.join(HERE, "credentials")   # test switch only
-ADDRESS = re.compile(r"^(https?://[^/]+)/v1/(kv/.+)$")
+ADDRESS = re.compile(r"^(https?://[^/]+)/v1/(kv/[^#\s]+)(?:#([A-Za-z_][A-Za-z0-9_]*))?$")   # …/<entry>[#KEY]: the entry names it differently
 
 
 class KmsError(Exception):
@@ -141,11 +141,12 @@ def resolve(env, fresh=False):
         m = ADDRESS.match(env[name] or "")
         if not m:
             continue
+        key = m.group(3) or name                  # KEY=…/<entry>#OTHER_KEY → that key inside the entry
         entry = read(env[name], fresh=fresh)
-        if name not in entry:
-            raise KmsError(f"no key {name} in {m.group(2)[len('kv/data/'):]} — add it: bash cache-agent/connect_external/kms/add_new_secret_to_kms.sh")
-        secrets[name] = entry[name]
-        where[name] = m.group(2)
+        if key not in entry:
+            raise KmsError(f"no key {key} in {m.group(2)[len('kv/data/'):]} — add it: bash cache-agent/connect_external/kms/add_new_secret_to_kms.sh")
+        secrets[name] = entry[key]
+        where[name] = m.group(2) + (f"#{key}" if m.group(3) else "")
     return secrets, where
 
 
