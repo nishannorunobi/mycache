@@ -294,6 +294,19 @@ miss=""
 for k in $(grep -oE '\$\{[A-Z_]+' "$MYCACHE/docker-compose.yml" | tr -d '${' | sort -u); do grep -qE "^$k=" "$MYCACHE/.env" || miss+=" $k"; done
 [ -z "$miss" ] && ok "T15 .env lists every key docker-compose.yml needs" || bad "T15 missing in .env:$miss"
 
+# ── R1 (KMS-79): a login that no longer works → the sign-up issues a new one; the login lives 1 year ──
+CA3="$(mktemp)"; printf '%s\n' "$CONF_OK" > "$CA3"
+printf 'not-a-secret-id\n' > "$KMS_APPROLE_DIR/mycache-cache-agent/secret_id"
+reg3="$(printf '%s\n' "$PW" | REG_AGENT_CONF="$CA3" bash "$REG_AGT" 2>&1)"; rc3=$?; rm -f "$CA3"
+t3="$(python3 -c 'import sys,json; print(json.dumps({"role_id":open(sys.argv[1]).read().strip(),"secret_id":open(sys.argv[2]).read().strip()}))' "$KMS_APPROLE_DIR/mycache-cache-agent/role_id" "$KMS_APPROLE_DIR/mycache-cache-agent/secret_id" \
+    | curl -s -X POST --data @- "$KMS_URL/v1/auth/approle/login" | j 'd["auth"]["client_token"]')"
+OT="$(owner_token)"; ttl3="$(curl -s -H @<(printf 'X-Vault-Token: %s\n' "$OT") "$KMS_URL/v1/auth/approle/role/mycache-cache-agent" | j 'd["data"]["secret_id_ttl"]')"; unset OT
+[ $rc3 = 0 ] && echo "$reg3" | grep -q 'login renewed' && [ -n "$t3" ] && [ "$ttl3" = 31536000 ] \
+    && ok "R1 sign-up renewal: a login that no longer works → 'login renewed', the new one logs in; the login lives 1 year (secret_id_ttl)" \
+    || bad "R1 renewal: rc=$rc3 ttl=$ttl3 new-login=$([ -n "$t3" ] && echo ok || echo no) $(echo "$reg3" | tail -1)"
+unset t3
+
+
 # ── T2: seal the throwaway → the container stops with SEALED ─────────────────
 OT="$(owner_token)"; curl -s -o /dev/null -X PUT -H @<(printf 'X-Vault-Token: %s\n' "$OT") "$KMS_URL/v1/sys/seal"; unset OT
 run_mycache "$CONF_OK"
@@ -311,17 +324,5 @@ done
 [ $leak = 0 ] && ok "T10 no test value in mirror logs, audit log or git" || bad "T10 a test value leaked"
 
 unset S1 S2 PW RPW RPW2 AKEY NEW2
-# ── R1 (KMS-79): a login that no longer works → the sign-up issues a new one; the login lives 1 year ──
-CA3="$(mktemp)"; printf '%s\n' "$CONF_OK" > "$CA3"
-printf 'not-a-secret-id\n' > "$KMS_APPROLE_DIR/mycache-cache-agent/secret_id"
-reg3="$(printf '%s\n' "$PW" | REG_AGENT_CONF="$CA3" bash "$REG_AGT" 2>&1)"; rc3=$?; rm -f "$CA3"
-t3="$(python3 -c 'import sys,json; print(json.dumps({"role_id":open(sys.argv[1]).read().strip(),"secret_id":open(sys.argv[2]).read().strip()}))' "$KMS_APPROLE_DIR/mycache-cache-agent/role_id" "$KMS_APPROLE_DIR/mycache-cache-agent/secret_id" \
-    | curl -s -X POST --data @- "$KMS_URL/v1/auth/approle/login" | j 'd["auth"]["client_token"]')"
-OT="$(owner_token)"; ttl3="$(curl -s -H @<(printf 'X-Vault-Token: %s\n' "$OT") "$KMS_URL/v1/auth/approle/role/mycache-cache-agent" | j 'd["data"]["secret_id_ttl"]')"; unset OT
-[ $rc3 = 0 ] && echo "$reg3" | grep -q 'login renewed' && [ -n "$t3" ] && [ "$ttl3" = 31536000 ] \
-    && ok "R1 sign-up renewal: a login that no longer works → 'login renewed', the new one logs in; the login lives 1 year (secret_id_ttl)" \
-    || bad "R1 renewal: rc=$rc3 ttl=$ttl3 new-login=$([ -n "$t3" ] && echo ok || echo no) $(echo "$reg3" | tail -1)"
-unset t3
-
 [ "$FAIL" = 0 ] && ok "mycache tests passed (throwaway containers removed)" && exit 0
 exit 1
