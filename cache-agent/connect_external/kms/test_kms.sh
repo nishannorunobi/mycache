@@ -62,17 +62,13 @@ health() { curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$KMS_URL/v1/sys/
 j() { python3 -c "import sys,json; d=json.load(sys.stdin); print($1)" 2>/dev/null; }
 REDIS_IMAGE="mycache-redis:$(grep -E '^REDIS_VERSION=' "$MYCACHE/.env" | cut -d= -f2)"
 docker image inspect "$REDIS_IMAGE" >/dev/null 2>&1 || (cd "$MYCACHE" && docker compose build -q redis) || { bad "mycache image $REDIS_IMAGE missing and could not be built"; exit 1; }
-# the command, healthcheck and the UI's entrypoint exactly as docker compose runs them ($$ → $)
-CFG="$(cd "$MYCACHE" && docker compose config --no-interpolate 2>/dev/null)"
-CMD="$(echo "$CFG" | python3 -c '
-import sys,re; t=sys.stdin.read(); r=t[t.index("\n  redis:"):t.index("\n  redis-commander:")]
-print(" ".join(re.findall(r"command:\n((?:\s+- .*\n)+)", r)[0].replace("$$","$").split("- ")).strip())')"
-HC="$(echo "$CFG" | python3 -c '
-import sys,re; t=sys.stdin.read(); r=t[t.index("\n  redis:"):t.index("\n  redis-commander:")]
-print(re.search(r"- CMD-SHELL\n\s+- (.*)", r).group(1).replace("$$","$"))')"
-UIE="$(echo "$CFG" | python3 -c '
-import sys,re; t=sys.stdin.read(); r=t[t.index("\n  redis-commander:"):]
-print(re.search(r"entrypoint:\n(?:\s+- .*\n)*?\s+- -c\n\s+- (.*)", r).group(1).replace("$$","$"))')"
+# the command, healthcheck and the UI's entrypoint exactly as docker compose runs them ($$ → $) — read from
+# compose's JSON, never its YAML text: a newer compose folds a long string over two lines (the staging run)
+CFG="$(cd "$MYCACHE" && docker compose config --no-interpolate --format json 2>/dev/null)"
+cfg() { echo "$CFG" | python3 -c "import sys,json; s=json.load(sys.stdin)['services']; print(($1).replace('\$\$','\$'))" 2>/dev/null; }
+CMD="$(cfg "' '.join(s['redis']['command'])")"
+HC="$(cfg "s['redis']['healthcheck']['test'][-1]")"
+UIE="$(cfg "s['redis-commander']['entrypoint'][-1]")"
 [ -n "$CMD" ] && [ -n "$HC" ] && [ -n "$UIE" ] || { bad "could not read the command / healthcheck / UI entrypoint from mycache's compose"; exit 1; }
 echo "$CMD" | grep -q supervisor.py || { bad "compose command is not the supervisor: $CMD"; exit 1; }
 
