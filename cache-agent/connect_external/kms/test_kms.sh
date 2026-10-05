@@ -159,7 +159,7 @@ docker logs "$R" 2>&1 | grep -qF -- "$AKEY" && leak6+=" logs-key"
 # ── T17: the Redis UI — password from the shared RAM volume, its real compose entrypoint ──
 docker run -d --name "$U" --network "$NET" -v "$VOL:/mycache-secrets:ro" --entrypoint /usr/bin/dumb-init \
     rediscommander/redis-commander:latest -- sh -c "$UIE" >/dev/null
-info=""; for _ in $(seq 1 20); do info="$(docker exec "$U" wget -qO- http://127.0.0.1:8081/apiv2/server/info 2>/dev/null)"; echo "$info" | grep -q '"Redis version"' && break; sleep 1; done
+info=""; for _ in $(seq 1 60); do info="$(docker exec "$U" wget -qO- http://127.0.0.1:8081/apiv2/server/info 2>/dev/null)"; echo "$info" | grep -q '"Redis version"' && break; sleep 1; done
 ui="$(docker logs "$U" 2>&1)"; uiok=1
 echo "$info" | grep -q '"Redis version"' || uiok=0
 echo "$ui" | grep -qiE 'NOAUTH|WRONGPASS|invalid password|ECONNREFUSED' && uiok=0
