@@ -58,12 +58,15 @@ h="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$URL/v1/sys/health")"
 [ "$h" = 200 ] || { bad "kms at $URL is not running + unsealed (health ${h:-none})"; exit 1; }
 
 # ── owner login (password hidden, sent via stdin) ─────────────────────────────
-ask "kms password for $OWNER (hidden): "; read -r -s pw; echo >&2
-TOKEN="$(printf '%s' "$pw" | python3 -c 'import sys,json; print(json.dumps({"password": sys.stdin.read()}))' \
-    | curl -s -X POST --data @- "$URL/v1/auth/userpass/login/$OWNER" | jget auth client_token)"
-unset pw
-[ -n "$TOKEN" ] || { bad "kms login failed for $OWNER"; exit 1; }
-trap 'printf "{}" | code POST auth/token/revoke-self >/dev/null; unset TOKEN' EXIT
+if [ -n "${KMS_TOKEN:-}" ]; then TOKEN="$KMS_TOKEN"; MINE=                    # handed over by signup_all_with_kms.sh (one login for every project)
+else
+    ask "kms password for $OWNER (hidden): "; read -r -s pw; echo >&2
+    TOKEN="$(printf '%s' "$pw" | python3 -c 'import sys,json; print(json.dumps({"password": sys.stdin.read()}))' \
+        | curl -s -X POST --data @- "$URL/v1/auth/userpass/login/$OWNER" | jget auth client_token)"
+    unset pw; MINE=1
+    [ -n "$TOKEN" ] || { bad "kms login failed for $OWNER"; exit 1; }
+fi
+trap '[ -n "$MINE" ] && { printf "{}" | code POST auth/token/revoke-self >/dev/null; unset TOKEN; }' EXIT
 umask 077
 
 # ── 1 + 2: policy, AppRole and login files per part ───────────────────────────
