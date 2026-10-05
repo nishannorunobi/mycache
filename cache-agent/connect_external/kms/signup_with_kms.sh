@@ -75,15 +75,23 @@ for part in "${!READS[@]}"; do
     done
     printf '%s' "$hcl" | python3 -c 'import sys,json; print(json.dumps({"policy": sys.stdin.read()}))' \
         | code PUT "sys/policies/acl/$name" | grep -q '^20' || { bad "policy $name failed"; exit 1; }
-    printf '{"token_policies":"%s","token_ttl":"1h","token_max_ttl":"4h","secret_id_bound_cidrs":"%s","token_bound_cidrs":"%s"}' \
+    printf '{"token_policies":"%s","token_ttl":"1h","token_max_ttl":"4h","secret_id_ttl":"8760h","secret_id_bound_cidrs":"%s","token_bound_cidrs":"%s"}' \
         "$name" "$CIDRS" "$CIDRS" | code POST "auth/approle/role/$name" | grep -q '^20' || { bad "AppRole $name failed"; exit 1; }
     d="$CRED/$name"; mkdir -p "$d" && chmod 700 "$d"
     call GET "auth/approle/role/$name/role-id" | jget data role_id > "$d/role_id"
+    RENEW=
+    if [ -s "$d/secret_id" ]; then      # the stored login still works? (expired after a year / revoked → renew it)
+        t="$(python3 -c 'import sys,json; print(json.dumps({"role_id":open(sys.argv[1]).read().strip(),"secret_id":open(sys.argv[2]).read().strip()}))' "$d/role_id" "$d/secret_id" \
+            | curl -s -X POST --data @- "$URL/v1/auth/approle/login" | jget auth client_token)"
+        if [ -n "$t" ]; then printf '{}' | curl -s -o /dev/null -X POST -H @<(printf 'X-Vault-Token: %s\n' "$t") --data @- "$URL/v1/auth/token/revoke-self"
+        else rm -f "$d/secret_id"; RENEW=1; fi
+        unset t
+    fi
     if [ ! -s "$d/secret_id" ]; then
         printf '{}' | call POST "auth/approle/role/$name/secret-id" | jget data secret_id > "$d/secret_id.new" \
             && [ -s "$d/secret_id.new" ] && mv "$d/secret_id.new" "$d/secret_id" \
             || { rm -f "$d/secret_id.new"; bad "secret_id for $name failed"; exit 1; }
-        sid="new login"
+        sid="${RENEW:+login renewed}"; sid="${sid:-new login}"
     else sid="login kept"; fi
     chmod 600 "$d/role_id" "$d/secret_id"
     ok "$name — may read: ${READS[$part]} · $sid"
