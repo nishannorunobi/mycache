@@ -166,7 +166,7 @@ echo "$ui" | grep -qiE 'NOAUTH|WRONGPASS|invalid password|ECONNREFUSED' && uiok=
 docker inspect -f '{{json .Config.Cmd}} {{json .Args}} {{json .Config.Env}}' "$U" | grep -qF -- "$RPW" && uiok=0
 echo "$ui" | grep -qF -- "$RPW" && uiok=0
 [ $uiok = 1 ] && ok "T17 Redis UI reads the password from the RAM volume and really talks to Redis; not in its config / args / logs" \
-    || bad "T17 Redis UI: $(echo "$ui" | grep -iE 'error|auth' | head -2)"
+    || bad "T17 Redis UI: info=[$(echo "$info" | head -c 100)] log: $(echo "$ui" | grep -iE 'error|auth|listening|ECONN' | tail -3 | tr '\n' ' ' | cut -c1-200)"
 docker rm -f "$U" >/dev/null
 
 # ── T18: the API dies → the supervisor starts it again ───────────────────────
