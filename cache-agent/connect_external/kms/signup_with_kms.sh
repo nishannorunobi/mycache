@@ -21,6 +21,8 @@
 case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} n==1{ sub(/^# ?/,""); if(!t){printf "\033[1m%s\033[0m\n",$0; t=1; next} l=substr($0,1,12); if(l ~ /^[A-Z][A-Za-z ]+$/){c=(l ~ /^Errors/)?"\033[33m":"\033[36m"; printf "%s%s\033[0m%s\n",c,l,substr($0,13)} else print }' "$0"; exit 0 ;; esac
 
 set -uo pipefail
+# a hidden prompt goes to the terminal itself — under start.sh's mirror logging stderr is a pipe that shows a line only after Enter
+ask() { { printf '%s' "$1" > /dev/tty; } 2>/dev/null || printf '%s' "$1" >&2; }
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENT="$(cd "$HERE/../.." && pwd)"
 ENV_FILE="${REG_AGENT_CONF:-$AGENT/agent.conf}"                 # REG_*: tests point elsewhere
@@ -56,7 +58,7 @@ h="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$URL/v1/sys/health")"
 [ "$h" = 200 ] || { bad "kms at $URL is not running + unsealed (health ${h:-none})"; exit 1; }
 
 # ── owner login (password hidden, sent via stdin) ─────────────────────────────
-read -r -s -p "kms password for $OWNER (hidden): " pw; echo >&2
+ask "kms password for $OWNER (hidden): "; read -r -s pw; echo >&2
 TOKEN="$(printf '%s' "$pw" | python3 -c 'import sys,json; print(json.dumps({"password": sys.stdin.read()}))' \
     | curl -s -X POST --data @- "$URL/v1/auth/userpass/login/$OWNER" | jget auth client_token)"
 unset pw
