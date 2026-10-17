@@ -25,7 +25,8 @@
 #             T8  static: nothing printed, tracked .env / agent.conf secret-free, credentials
 #                 ignored, one kms folder (the agent's) · T11 add_new_secret_to_kms.sh
 #                 · T11b refresh_random_secrets_to_kms.sh: new random value in kms AND Redis, old refused, value never shown
-#             T12 every script explains itself · T14 no login, in startup → message
+#             T12 every script explains itself · T14 no login, in startup, master_password empty → message
+#             (the agent's own sign-up at start: test_agent_signup.sh)
 #             T15 .env lists every key compose needs · T2 kms sealed → exits with SEALED
 #             T10 no test value in logs / git
 # ─────────────────────────────────────────────────────────────────────────────
@@ -46,17 +47,18 @@ MYCACHE="$(cd "$AGENT/.." && pwd)"
 PROJECT="${KMS_PROJECT:-$_WS_ROOT/projectspace/kms}"                     # test-only: the kms image + bootstrap
 DOCKERSPACE="$PROJECT/dockerspace"
 LOGS="$_WS_ROOT/mountspace/logs/myworkspace/projectspace"
-source "$DOCKERSPACE/.env"
+OPENBAO_IMAGE="$(grep -E '^OPENBAO_IMAGE=' "$DOCKERSPACE/.env" | cut -d= -f2-)"   # only the image — never kms's folders (TESTSERVER-24)
 T=kms-mycache-test; R=kms-mycache-redis-test; NET=kms-mycache-testnet; U=kms-mycache-ui-test; VOL=kms-mycache-test-secrets
 export KMS_URL=http://127.0.0.1:8119
 DATA="$(mktemp -d)"; AUDIT="$(mktemp -d)"; WORK="$(mktemp -d)"
 export KMS_STATE_DIR="$(mktemp -d)" KMS_SECRETS_DIR="$(mktemp -d)/kms" KMS_ALLOWED_CIDRS="172.16.0.0/12,127.0.0.1/32"
+export KMS_STATIC_KEY_DIR="$(mktemp -d)/usb" KMS_USB_BACKUP_DIR="$(mktemp -d)"   # kms's usb/ (key · shares · master_password): temp — never the real one
 export KMS_APPROLE_DIR="$KMS_SECRETS_DIR/approle"   # where the agent's signup writes the login files (test only)
 FAIL=0
 ok()  { echo -e "\033[32m[  OK  ]\033[0m $*"; }
 bad() { echo -e "\033[31m[ERROR]\033[0m  $*"; FAIL=1; }
 cleanup() { docker rm -f "$T" "$R" "$U" >/dev/null 2>&1; docker volume rm "$VOL" >/dev/null 2>&1; docker network rm "$NET" >/dev/null 2>&1
-            rm -rf "$DATA" "$AUDIT" "$WORK" "$KMS_STATE_DIR" "$(dirname "$KMS_SECRETS_DIR")"; }
+            rm -rf "$DATA" "$AUDIT" "$WORK" "$KMS_STATE_DIR" "$(dirname "$KMS_SECRETS_DIR")" "$(dirname "$KMS_STATIC_KEY_DIR")" "$KMS_USB_BACKUP_DIR"; }
 trap cleanup EXIT
 health() { curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$KMS_URL/v1/sys/health"; }
 j() { python3 -c "import sys,json; d=json.load(sys.stdin); print($1)" 2>/dev/null; }
@@ -230,9 +232,10 @@ grep -nE '(echo|printf|print).*REDIS_PASSWORD' "$MYCACHE/start.sh" "$AGENT"/*.sh
 grep -nE -- '-a[", ]+.*REDIS_PASSWORD|"-a"' "$MYCACHE/docker-compose.yml" "$AGENT/server.py" "$MYCACHE"/*.sh "$AGENT"/*.sh >/dev/null && t8=1
 for f in .env cache-agent/agent.conf; do                                         # tracked + secret-free (only kms addresses)
     git -C "$MYCACHE" ls-files --error-unmatch "$f" >/dev/null 2>&1 || t8=1
-    grep -E '^[A-Z_]*(PASS|PASSWORD|SECRET|TOKEN|API_KEY)[A-Z_]*=.+' "$MYCACHE/$f" | grep -vqE '=https?://[^ ]+/v1/kv/' && t8=1
+    grep -E '^[A-Z_]*(PASS|PASSWORD|SECRET|TOKEN|API_KEY)[A-Z_]*=.+' "$MYCACHE/$f" | grep -v '^KMS_MASTER_PASSWORD_DIR=' | grep -vqE '=https?://[^ ]+/v1/kv/' && t8=1   # the password FOLDER's path: no secret
 done
-grep -rnE 'projectspace/kms|\.\./kms/|\.\./\.\./kms/' --include=*.sh --include=*.py --include=*.yml "$MYCACHE" | grep -v test_kms.sh >/dev/null && t8=1   # decoupled: HTTP only
+grep -rnE 'projectspace/kms|\.\./kms/|\.\./\.\./kms/' --include=*.sh --include=*.py --include=*.yml "$MYCACHE" | grep -v 'test_kms.sh\|test_agent_signup.sh' \
+    | grep -v 'mountspace/usb/myworkspace/projectspace/kms/master_password' >/dev/null && t8=1   # decoupled: HTTP only — kms's password FOLDER (read-only mount) is no kms file
 git -C "$MYCACHE" check-ignore -q cache-agent/connect_external/kms/credentials/x || t8=1   # login files never in git
 [ -d "$MYCACHE/connect_external" ] && t8=1                                                  # one kms folder: the agent's
 grep -q '^REDIS_PASSWORD=' "$MYCACHE/.env" && t8=1                                           # .env: Redis settings only
@@ -281,8 +284,10 @@ done
 
 # ── T14 no login, in startup → clear message, nothing started ────────────────
 if ls "$AGENT"/connect_external/kms/credentials/*/secret_id >/dev/null 2>&1; then o="SKIP"; else
-    o="$( (cd /tmp && SVC_RUN=1 bash "$MYCACHE/start.sh" </dev/null; echo "rc=$?") 2>&1 )"; fi            # stops BEFORE docker compose
-{ [ "$o" = SKIP ] || { echo "$o" | grep -q 'not signed up with kms yet' && echo "$o" | grep -q 'rc=1' && ! echo "$o" | grep -q 'Starting Redis'; }; } \
+    STUB="$(mktemp -d)"; printf '#!/bin/bash\necho STUB_DOCKER\nexit 1\n' > "$STUB/docker"; chmod +x "$STUB/docker"   # never the live stack
+    o="$( (cd /tmp && PATH="$STUB:$PATH" SVC_RUN=1 bash "$MYCACHE/start.sh" </dev/null; echo "rc=$?") 2>&1 )"; rm -rf "$STUB"; fi   # stops BEFORE docker compose
+{ [ "$o" = SKIP ] || echo "$o" | grep -q 'signs itself up as it starts' \
+  || { echo "$o" | grep -q 'not signed up with kms yet' && echo "$o" | grep -q 'rc=1' && ! echo "$o" | grep -q 'STUB_DOCKER'; }; } \
     && ok "T14 no login, in startup: start.sh → clear message, nothing started" || bad "T14: $(echo "$o" | grep -iE 'error|info' | head -2)"
 
 # ── T15 .env is the full list: every ${KEY} docker-compose.yml needs is a line in .env ──

@@ -11,7 +11,8 @@
 # How         bash start.sh             Redis + web UI
 #             bash start.sh --no-ui     Redis only
 #
-# Steps       1. first time only: sign the cache-agent up with kms (asks your kms password)
+# Steps       1. first time only: the cache-agent signs itself up with kms as it starts (your kms password from
+#                kms's master_password, .env KMS_MASTER_PASSWORD_DIR) — file empty → asks here, by hand only
 #             2. docker compose up -d — builds the image once (internet once), then:
 #                inside: cache-agent/supervisor.py → kms → Redis + the agent API
 #
@@ -20,7 +21,7 @@
 #
 # Errors      kms is SEALED          → unseal kms — the container retries by itself
 #                                     (see why: docker logs mycache-redis)
-#             not signed up, in startup → run bash start.sh by hand once
+#             not signed up, master_password empty → put your kms password there, or run bash start.sh by hand once
 #             the agent / Redis failed  → docker logs mycache-redis ([agent] lines say why)
 #
 # Next        bash status.sh  ·  bash stop.sh
@@ -46,13 +47,22 @@ GREEN="\033[32m"; YELLOW="\033[33m"; BOLD="\033[1m"; RESET="\033[0m"
 
 source .env      # Redis settings — no secret
 
-# The cache-agent fetches the secrets inside the container (its connect_external/kms/). This PC
-# only makes sure the agent has its kms login — once, by hand: it asks your kms password, so
-# never inside startup / shutdown (SVC_RUN) and never without a terminal.
+# The cache-agent fetches the secrets inside the container (its connect_external/kms/) — and signs itself up with
+# kms when it has no login yet (TESTSERVER-24): with the owner's kms password from kms's master_password folder
+# (.env KMS_MASTER_PASSWORD_DIR), mounted read-only. Before the start, this script only checks that the agent CAN
+# sign up — else the container would stop and be restarted again and again. Started by hand in a terminal with the
+# file empty → it signs up here and asks your kms password (as before).
+MASTER_PW_DIR="${KMS_MASTER_PASSWORD_DIR:-}"
+[ -n "$MASTER_PW_DIR" ] && [ "${MASTER_PW_DIR#/}" = "$MASTER_PW_DIR" ] && MASTER_PW_DIR="$SCRIPT_DIR/$MASTER_PW_DIR"
+MASTER_PW="$MASTER_PW_DIR/master_password"
 if ! ls cache-agent/connect_external/kms/credentials/*/secret_id >/dev/null 2>&1; then
-    { [ -z "${SVC_RUN:-}" ] && [ -t 0 ]; } \
-        || { echo -e "\033[31m[ERROR]${RESET} the cache-agent is not signed up with kms yet — run by hand once: bash $SCRIPT_DIR/start.sh"; exit 1; }
-    bash cache-agent/connect_external/kms/signup_with_kms.sh || exit 1
+    if [ -n "$MASTER_PW_DIR" ] && [ -s "$MASTER_PW" ] && grep -q '[^[:space:]]' "$MASTER_PW" 2>/dev/null; then
+        echo -e "\033[36m[ INFO ]${RESET} the cache-agent has no kms login yet — it signs itself up as it starts (kms's master_password is filled)"
+    elif [ -z "${SVC_RUN:-}" ] && [ -t 0 ]; then
+        bash cache-agent/connect_external/kms/signup_with_kms.sh || exit 1
+    else
+        echo -e "\033[31m[ERROR]${RESET} the cache-agent is not signed up with kms yet — put your kms password into $MASTER_PW (kms's master_password), then start again — or once by hand: bash $SCRIPT_DIR/start.sh"; exit 1
+    fi
 fi
 
 # --no-ui starts the broker only, leaving redis-commander (mycache-redis-ui) down.

@@ -10,7 +10,9 @@
 #
 # How         /opt/venv/bin/python /cache-agent/supervisor.py        (in the container)
 #
-# Steps       1. agent.conf → settings; every kms address → its value (kms.py, own login)
+# Steps       0. no kms login yet → signs itself up: the owner's kms password from kms's master_password (read-only
+#                mount, KMS_MASTER_PASSWORD_FILE) → its own connect_external/kms/signup_with_kms.sh (KMS_TOKEN)
+#             1. agent.conf → settings; every kms address → its value (kms.py, own login)
 #             2. /run/redis.conf (RAM): requirepass; the Redis UI's copy in /mycache-secrets
 #             3. start redis-server as a child (the image's docker-entrypoint → user redis)
 #             4. start the agent API (uvicorn server:app :PORT) as a child — it gets the kms
@@ -85,6 +87,66 @@ def settings():
     return env
 
 
+CRED_DIR = os.path.join(AGENT_DIR, "connect_external", "kms", "credentials")
+
+
+def ensure_login(env):
+    """No kms login yet → the agent signs itself up (TESTSERVER-24): it reads the owner's kms password from kms's
+    master_password folder, mounted READ-ONLY (KMS_MASTER_PASSWORD_FILE), logs in to kms itself and runs its own
+    connect_external/kms/signup_with_kms.sh with that login (KMS_TOKEN). The new login files get the cache-agent
+    folder's owner (this container runs as root). Already signed up → nothing. The password is never printed or logged."""
+    import glob, json, re, urllib.request
+    if glob.glob(os.path.join(CRED_DIR, "*", "secret_id")):
+        return
+    pw_file = os.environ.get("KMS_MASTER_PASSWORD_FILE", "")
+    host_hint = "mountspace/usb/myworkspace/projectspace/kms/master_password/master_password (on the PC)"
+    pw = ""
+    if pw_file and os.path.isfile(pw_file):
+        with open(pw_file) as f:
+            pw = f.readline().rstrip("\r\n")
+    if not pw.strip():
+        why = "not mounted" if not pw_file or not os.path.isfile(pw_file) else "empty"
+        say(f"ERROR: no kms login yet, and kms's master_password is {why} — put your kms password into {host_hint}, then start again")
+        sys.exit(1)
+    base = next((v.split("/v1/")[0] for v in env.values() if kms.is_address(v)), "")
+    if not base:
+        say("ERROR: agent.conf names no kms address — nothing signed up")
+        sys.exit(1)
+    owner = os.environ.get("KMS_OWNER", "nishan")
+    say(f"no kms login yet — signing up with kms ({base}) as {owner}, password from kms's master_password")
+    try:
+        req = urllib.request.Request(f"{base}/v1/auth/userpass/login/{owner}", data=json.dumps({"password": pw}).encode(),
+                                     headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            token = json.load(resp)["auth"]["client_token"]
+    except Exception as e:
+        del pw
+        say(f"ERROR: kms refused the login with the password from master_password ({type(e).__name__}) — check {host_hint}")
+        sys.exit(1)
+    del pw
+    child = dict(os.environ)                      # settings like KMS_ALLOWED_CIDRS pass through; the login + address are set here
+    child.update({"KMS_TOKEN": token, "KMS_URL": base})
+    r = subprocess.run(["bash", os.path.join(AGENT_DIR, "connect_external", "kms", "signup_with_kms.sh")],
+                       env=child, stdin=subprocess.DEVNULL, capture_output=True, text=True)
+    try:                                          # the login is not needed any more
+        urllib.request.urlopen(urllib.request.Request(f"{base}/v1/auth/token/revoke-self", data=b"{}",
+                               headers={"X-Vault-Token": token}, method="POST"), timeout=10).close()
+    except Exception:
+        pass
+    del token, child
+    for line in (r.stdout + r.stderr).splitlines():
+        if line.strip():
+            say("  " + re.sub(r"\x1b\[[0-9;]*m", "", line))
+    if r.returncode != 0 or not glob.glob(os.path.join(CRED_DIR, "*", "secret_id")):
+        say("ERROR: the kms sign-up failed — the lines above say why")
+        sys.exit(1)
+    st = os.stat(AGENT_DIR)                       # the host user who owns the cache-agent folder
+    for root, dirs, files in os.walk(CRED_DIR):
+        for n in [root] + [os.path.join(root, x) for x in dirs + files]:
+            os.chown(n, st.st_uid, st.st_gid)
+    say("signed up with kms — login saved in connect_external/kms/credentials/ (600)")
+
+
 def fetch(env):
     try:
         secrets, where = kms.resolve(env)
@@ -124,6 +186,7 @@ def main(argv):
         return 0
 
     env = settings()
+    ensure_login(env)              # no kms login yet → signs itself up (TESTSERVER-24)
     secrets = fetch(env)           # only the kms addresses; a plain value in agent.conf stays as written
     current = {**env, **secrets}.get("REDIS_PASSWORD", "")
     redis_p = start_redis(current)

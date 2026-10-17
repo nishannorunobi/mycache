@@ -31,6 +31,7 @@ services:
     env_file: .env                 # Redis settings (no secret — those are kms addresses in cache-agent/agent.conf)
     environment:
       LOG_MIRROR_ROOT: /mountspace/logs/myworkspace/projectspace/mycache
+      KMS_MASTER_PASSWORD_FILE: /mountspace/usb/myworkspace/projectspace/kms/master_password/master_password
       PYTHONUNBUFFERED: "1"          # the agent's output reaches docker logs at once
       PYTHONDONTWRITEBYTECODE: "1"   # no root-owned __pycache__ in the mounted cache-agent/ folder
     volumes:
@@ -38,6 +39,9 @@ services:
       - ./cache-agent:/cache-agent                        # the agent + its kms login (connect_external/kms/credentials/)
       - mycache-secrets:/mycache-secrets                  # RAM: the password for the Redis UI
       - ../../mountspace/logs:/mountspace/logs
+      # kms's master_password folder ONLY, read-only (TESTSERVER-24): no kms login yet → the cache-agent signs itself
+      # up from it. The owner keeps it empty most of the time. Where it is: KMS_MASTER_PASSWORD_DIR in .env
+      - ${KMS_MASTER_PASSWORD_DIR}:/mountspace/usb/myworkspace/projectspace/kms/master_password:ro
     networks:
       mycache-net:
       my_docker_network:
