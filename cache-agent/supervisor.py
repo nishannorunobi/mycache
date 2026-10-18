@@ -12,7 +12,9 @@
 #
 # Steps       0. no kms login yet → signs itself up: the owner's kms password from kms's master_password (read-only
 #                mount, KMS_MASTER_PASSWORD_FILE) → its own connect_external/kms/signup_with_kms.sh (KMS_TOKEN)
-#             1. agent.conf → settings; every kms address → its value (kms.py, own login)
+#             1. agent.conf → settings; every kms address → its value (kms.py, own login) — a key kms does not have →
+#                connect_external/kms/register_kms_keys_when_missing_with_random_initial.sh (owner login from
+#                master_password): created with an initial random value (an outside key: a placeholder), fetched again
 #             2. /run/redis.conf (RAM): requirepass; the Redis UI's copy in /mycache-secrets
 #             3. start redis-server as a child (the image's docker-entrypoint → user redis)
 #             4. start the agent API (uvicorn server:app :PORT) as a child — it gets the kms
@@ -30,6 +32,7 @@
 # Next        docker logs mycache-redis  ·  http://localhost:8892/health
 # ─────────────────────────────────────────────────────────────────────────────
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -90,14 +93,11 @@ def settings():
 CRED_DIR = os.path.join(AGENT_DIR, "connect_external", "kms", "credentials")
 
 
-def ensure_login(env):
-    """No kms login yet → the agent signs itself up (TESTSERVER-24): it reads the owner's kms password from kms's
-    master_password folder, mounted READ-ONLY (KMS_MASTER_PASSWORD_FILE), logs in to kms itself and runs its own
-    connect_external/kms/signup_with_kms.sh with that login (KMS_TOKEN). The new login files get the cache-agent
-    folder's owner (this container runs as root). Already signed up → nothing. The password is never printed or logged."""
-    import glob, json, re, urllib.request
-    if glob.glob(os.path.join(CRED_DIR, "*", "secret_id")):
-        return
+def owner_login(env, by_hand):
+    """The owner's kms login for a one-off write (sign-up / register): the password from kms's master_password folder,
+    mounted READ-ONLY (KMS_MASTER_PASSWORD_FILE, KMS-215). Empty / missing → one line naming the file + the by-hand
+    command, exit 1. Returns (kms base URL, token, True). The password is never printed or logged."""
+    import json, urllib.request
     pw_file = os.environ.get("KMS_MASTER_PASSWORD_FILE", "")
     host_hint = "mountspace/usb/myworkspace/projectspace/kms/master_password/master_password (on the PC)"
     pw = ""
@@ -106,55 +106,112 @@ def ensure_login(env):
             pw = f.readline().rstrip("\r\n")
     if not pw.strip():
         why = "not mounted" if not pw_file or not os.path.isfile(pw_file) else "empty"
-        say(f"ERROR: no kms login yet, and kms's master_password is {why} — put your kms password into {host_hint}, then start again")
+        say(f"ERROR: kms's master_password is {why} — put your kms password into {host_hint}, then start again"
+            f" (or by hand on the PC: {by_hand})")
         sys.exit(1)
     base = next((v.split("/v1/")[0] for v in env.values() if kms.is_address(v)), "")
     if not base:
-        say("ERROR: agent.conf names no kms address — nothing signed up")
+        say("ERROR: agent.conf names no kms address")
         sys.exit(1)
     owner = os.environ.get("KMS_OWNER", "nishan")
-    say(f"no kms login yet — signing up with kms ({base}) as {owner}, password from kms's master_password")
     try:
         req = urllib.request.Request(f"{base}/v1/auth/userpass/login/{owner}", data=json.dumps({"password": pw}).encode(),
                                      headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            token = json.load(resp)["auth"]["client_token"]
+        with urllib.request.urlopen(req, timeout=10) as r:
+            token = json.load(r)["auth"]["client_token"]
     except Exception as e:
         del pw
         say(f"ERROR: kms refused the login with the password from master_password ({type(e).__name__}) — check {host_hint}")
         sys.exit(1)
     del pw
-    child = dict(os.environ)                      # settings like KMS_ALLOWED_CIDRS pass through; the login + address are set here
-    child.update({"KMS_TOKEN": token, "KMS_URL": base})
-    r = subprocess.run(["bash", os.path.join(AGENT_DIR, "connect_external", "kms", "signup_with_kms.sh")],
-                       env=child, stdin=subprocess.DEVNULL, capture_output=True, text=True)
+    return base, token, True
+
+
+def revoke(base, token):
+    import urllib.request
     try:                                          # the login is not needed any more
         urllib.request.urlopen(urllib.request.Request(f"{base}/v1/auth/token/revoke-self", data=b"{}",
                                headers={"X-Vault-Token": token}, method="POST"), timeout=10).close()
     except Exception:
         pass
-    del token, child
+
+
+def run_kms_script(name, base, token, args=()):
+    """connect_external/kms/<name> with the owner login handed over (KMS_TOKEN) — its lines shown indented."""
+    child = dict(os.environ)                      # settings like KMS_ALLOWED_CIDRS pass through; the login + address are set here
+    child.update({"KMS_TOKEN": token, "KMS_URL": base})
+    r = subprocess.run(["bash", os.path.join(AGENT_DIR, "connect_external", "kms", name), *args],
+                       env=child, stdin=subprocess.DEVNULL, capture_output=True, text=True)
+    del child
     for line in (r.stdout + r.stderr).splitlines():
-        if line.strip():
+        if line.strip() and "[logging]" not in line:
             say("  " + re.sub(r"\x1b\[[0-9;]*m", "", line))
-    if r.returncode != 0 or not glob.glob(os.path.join(CRED_DIR, "*", "secret_id")):
+    return r.returncode
+
+
+def ensure_login(env):
+    """No kms login yet → the agent signs itself up (TESTSERVER-46): it reads the owner's kms password from kms's
+    master_password folder, mounted READ-ONLY (KMS_MASTER_PASSWORD_FILE, KMS-215), logs in to kms itself and runs its
+    own connect_external/kms/signup_with_kms.sh with that login. The new login files get the agent folder's owner
+    (this container runs as root). Already signed up → nothing. The password is never printed or logged."""
+    import glob
+    if glob.glob(os.path.join(CRED_DIR, "*", "secret_id")):
+        return
+    owner = os.environ.get("KMS_OWNER", "nishan")
+    say(f"no kms login yet — signing up with kms as {owner}, password from kms's master_password")
+    base, token, _ = owner_login(env, "bash start.sh (asks your kms password)")
+    rc = run_kms_script("signup_with_kms.sh", base, token)
+    revoke(base, token)
+    del token
+    if rc != 0 or not glob.glob(os.path.join(CRED_DIR, "*", "secret_id")):
         say("ERROR: the kms sign-up failed — the lines above say why")
         sys.exit(1)
-    st = os.stat(AGENT_DIR)                       # the host user who owns the cache-agent folder
+    st = os.stat(AGENT_DIR)                       # the host user who owns the project folder
     for root, dirs, files in os.walk(CRED_DIR):
         for n in [root] + [os.path.join(root, x) for x in dirs + files]:
             os.chown(n, st.st_uid, st.st_gid)
     say("signed up with kms — login saved in connect_external/kms/credentials/ (600)")
 
 
+MISSING = (" is not in kms", "no key ")             # kms.py's words for a key kms does not have (a 403 "may not read" is not)
+
+
 def fetch(env):
+    """Every kms address → its value. A key kms does not have → registered once with an initial random value
+    (connect_external/kms/register_kms_keys_when_missing_with_random_initial.sh, owner rule 2026-10-17), then fetched
+    again — a fresh kms never stops Redis. A placeholder (an outside key) is named once: its feature is off."""
     try:
         secrets, where = kms.resolve(env)
     except kms.KmsError as e:
-        say(f"ERROR: {e}")
-        sys.exit(1)
+        if not any(m in str(e) for m in MISSING):
+            say(f"ERROR: {e}")
+            sys.exit(1)
+        missing = []
+        for name in sorted(k for k, v in env.items() if kms.is_address(v)):
+            try:
+                kms.resolve({name: env[name]}, fresh=True)
+            except kms.KmsError as e1:
+                if not any(m in str(e1) for m in MISSING):
+                    say(f"ERROR: {e1}")
+                    sys.exit(1)
+                missing.append(name)
+        say(f"{', '.join(missing)}: not in kms — registering with an initial random value")
+        base, token, mine = owner_login(env, f"bash connect_external/kms/register_kms_keys_when_missing_with_random_initial.sh {' '.join(missing)}")
+        rc = run_kms_script("register_kms_keys_when_missing_with_random_initial.sh", base, token, missing)
+        if mine:
+            revoke(base, token)
+        del token
+        if rc != 0:
+            say("ERROR: registering the missing keys failed — the lines above say why")
+            sys.exit(1)
+        try:
+            secrets, where = kms.resolve(env, fresh=True)
+        except kms.KmsError as e2:
+            say(f"ERROR: {e2}")
+            sys.exit(1)
     for name in secrets:
-        say(f"{name} ← kms ({where[name][len('kv/data/'):]})")
+        flag = "   ⚠ placeholder — its feature is off until you set the real value in kms" if str(secrets[name]).startswith("placeholder-") else ""
+        say(f"{name} ← kms ({where[name][len('kv/data/'):]}){flag}")
     return secrets
 
 

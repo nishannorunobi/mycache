@@ -41,7 +41,8 @@ C="${REDIS_CONTAINER:-mycache-redis}"
 KEY=REDIS_PASSWORD
 ok()  { echo -e "\033[32m[  OK  ]\033[0m $*"; }
 bad() { echo -e "\033[31m[ERROR]\033[0m  $*" >&2; }
-KPATH="$(grep -E "^$KEY=https?://" "$ENV_FILE" 2>/dev/null | grep -oE '/v1/kv/data/[^ ]+' | head -1 | sed 's#^/v1/kv/data/##')"
+source "$HERE/kms_conf.sh"                                  # the config lines with ${KMS_URL} expanded (TESTSERVER-46)
+KPATH="$(kms_conf "$ENV_FILE" | grep -E "^$KEY=https?://" | grep -oE '/v1/kv/data/[^ ]+' | head -1 | sed 's#^/v1/kv/data/##')"
 [ -n "$KPATH" ] || { bad "$KEY is not a kms address in $(basename "$ENV_FILE")"; exit 1; }
 docker inspect -f '{{.State.Running}}' "$C" 2>/dev/null | grep -q true || { bad "Redis ($C) is not running — start it first: bash start.sh"; exit 1; }
 h="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$URL/v1/sys/health")"

@@ -100,10 +100,13 @@ class _Client:
             if self._client is None:
                 self._login()
             data = None
+            import hvac.exceptions
             for attempt in (1, 2):
                 try:
                     data = (self._client.adapter.get("/v1/" + api_path) or {}).get("data", {}).get("data")
                     break
+                except hvac.exceptions.InvalidPath:        # 404: the agent MAY read it, kms has no such entry (yet)
+                    raise KmsError(f"{api_path[len('kv/data/'):]} is not in kms")
                 except Exception:
                     if attempt == 1:
                         self._login()          # the 1-hour pass may have expired → one new login, one retry

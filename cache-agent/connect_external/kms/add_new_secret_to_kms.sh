@@ -41,7 +41,8 @@ KEY="${1:-}"
 [ -n "$KEY" ] || read -r -p "Key name (e.g. NEW_API_KEY): " KEY
 [[ "$KEY" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { echo "[ERROR] key name: letters, digits and _ only (got '$KEY')" >&2; exit 2; }
 # where it lives: the entry agent.conf already names for this key (REDIS_PASSWORD → mycache/redis), else the agent's own entry
-KPATH="$(grep -E "^$KEY=https?://" "$ENV_FILE" 2>/dev/null | grep -oE '/v1/kv/data/[^ ]+' | head -1 | sed 's#^/v1/kv/data/##')"
+source "$HERE/kms_conf.sh"                                  # the config lines with ${KMS_URL} expanded (TESTSERVER-46)
+KPATH="$(kms_conf "$ENV_FILE" | grep -E "^$KEY=https?://" | grep -oE '/v1/kv/data/[^ ]+' | head -1 | sed 's#^/v1/kv/data/##')"
 KPATH="${KPATH:-$OWN_PATH}"
 h="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$URL/v1/sys/health")"
 [ "$h" = 200 ] || { echo "[ERROR] kms at $URL is not running + unsealed (health ${h:-none})" >&2; exit 1; }
@@ -74,9 +75,9 @@ unset CUR VAL
 echo -e "\033[32m[  OK  ]\033[0m kv/$KPATH  $KEY stored (version $ver)"
 
 # the config line: <KEY>=<kms address> — the same kms as the lines already there
-BASE="$(grep -E '^[A-Za-z_][A-Za-z0-9_]*=https?://' "$ENV_FILE" 2>/dev/null | grep -oE 'https?://[^/ ]+/v1/kv/' | head -1)"   # real lines only, not comments
-BASE="${BASE:-http://kms-openbao:8200/v1/kv/}"
-ADDR="${BASE}data/$KPATH"
+# the config line: ${KMS_URL}/… when the file names KMS_URL (TESTSERVER-46), else written in full
+if grep -qE '^KMS_URL=' "$ENV_FILE" 2>/dev/null; then ADDR="\${KMS_URL}/v1/kv/data/$KPATH"
+else BASE="$(kms_base "$ENV_FILE")"; ADDR="${BASE:-http://kms-openbao:8200}/v1/kv/data/$KPATH"; fi
 python3 - "$ENV_FILE" "$KEY" "$ADDR" <<'PY2'
 import sys, re, os
 path, key, addr = sys.argv[1:]

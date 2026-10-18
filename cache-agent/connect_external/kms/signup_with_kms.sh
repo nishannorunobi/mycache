@@ -121,7 +121,7 @@ for line in open(path):
         break
 PY
 )"
-    if [ -z "$val" ]; then echo -e "\033[33m[WARN]\033[0m   $key is not in kms and not in $(basename "$file") — set it in the kms UI: kv/$kpath"; continue; fi
+    if [ -z "$val" ]; then echo -e "\033[36m[ INFO ]\033[0m $key not in kms yet — the cache-agent creates it at its first fetch (initial random value; register_kms_keys_when_missing_with_random_initial.sh)"; continue; fi
     printf '%s\n%s' "$cur" "$val" | python3 -c 'import sys,json
 cur=json.loads(sys.stdin.readline()); cur[sys.argv[1]]=sys.stdin.read(); print(json.dumps({"data": cur}))' "$key" \
         | code POST "kv/data/$kpath" | grep -q '^20' && ok "kv/$kpath $key copied into kms from $(basename "$file")" \
