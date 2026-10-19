@@ -21,7 +21,7 @@
 #             T18 API dies → restarted by the supervisor · T19 Redis dies → container exits
 #             T20 docker stop → clean exit 0 · T21 changed password → refused once → re-read, no restart
 #             T3  refused outside its own paths
-#             T5  empty password → not started · T16 a plain value is used as written
+#             T5  empty password → not started · T16 SECRET_MGT: kms + plain → refused · local → as written
 #             T8  static: nothing printed, tracked .env / agent.conf secret-free, credentials
 #                 ignored, one kms folder (the agent's) · T11 add_new_secret_to_kms.sh
 #                 · T11b refresh_random_secrets_to_kms.sh: new random value in kms AND Redis, old refused, value never shown
@@ -98,7 +98,7 @@ KADDR="http://$T:8200/v1/kv/data"                                       # the km
 
 # ── T0: the agent signs itself up (fake agent.conf with a real key once, temp credentials) ──
 export REG_AGENT_CONF="$(mktemp)"
-printf 'PORT=8892\nANTHROPIC_API_KEY=%s\nREDIS_PASSWORD=%s/mycache/redis\n' "$AKEY" "$KADDR" > "$REG_AGENT_CONF"   # old-style key: copied once; an address: never
+printf 'SECRET_MGT=kms\nPORT=8892\nANTHROPIC_API_KEY=%s\nREDIS_PASSWORD=%s/mycache/redis\n' "$AKEY" "$KADDR" > "$REG_AGENT_CONF"   # old-style key: copied once; an address: never
 REG_AGT="$AGENT/connect_external/kms/signup_with_kms.sh"
 reg="$(printf '%s\n' "$PW" | bash "$REG_AGT" 2>&1)"; rc=$?
 reg2="$(printf '%s\n' "$PW" | bash "$REG_AGT" 2>&1)"
@@ -115,13 +115,14 @@ AD="$WORK/cache-agent"
 run_mycache() {   # run_mycache <agent.conf text> [docker args…] — a COPY of cache-agent/ with the test login
     rm -rf "$AD"; mkdir -p "$AD"
     (cd "$AGENT" && tar --exclude=./connect_external/kms/credentials --exclude=./.venv --exclude=./memory --exclude='./__pycache__' -cf - .) | tar -xf - -C "$AD"
-    printf '%s\n' "$1" > "$AD/agent.conf"
+    { grep -q '^SECRET_MGT=' <<< "$1" || echo SECRET_MGT=kms; printf '%s\n' "$1"; } > "$AD/agent.conf"   # no mode named → kms (TESTSERVER-67)
     mkdir -p "$AD/connect_external/kms/credentials" && cp -r "$KMS_APPROLE_DIR/mycache-cache-agent" "$AD/connect_external/kms/credentials/"
     chmod 700 "$AD/connect_external/kms/credentials" "$AD/connect_external/kms/credentials/mycache-cache-agent"
     docker run -d --name "$R" --network "$NET" --network-alias mycache-redis --tmpfs /run -v "$VOL:/mycache-secrets" \
         -v "$AD:/cache-agent" -e PYTHONDONTWRITEBYTECODE=1 "${@:2}" --health-cmd "$HC" --health-interval 1s --health-retries 30 "$REDIS_IMAGE" $CMD >/dev/null
 }
-CONF_OK="PORT=8892
+CONF_OK="SECRET_MGT=kms
+PORT=8892
 ANTHROPIC_API_KEY=$KADDR/shared/anthropic
 REDIS_PASSWORD=$KADDR/mycache/redis"
 healthy() { for _ in $(seq 1 40); do [ "$(docker inspect -f '{{.State.Health.Status}}' "$R" 2>/dev/null)" = healthy ] && return 0
@@ -203,9 +204,17 @@ docker rm -f "$R" >/dev/null
 run_mycache "PORT=8892
 ANTHROPIC_API_KEY=$KADDR/shared/anthropic
 REDIS_PASSWORD=$RPW"
-if healthy && ! docker logs "$R" 2>&1 | grep -q 'REDIS_PASSWORD ← kms' && [ "$(REDISCLI_AUTH="$RPW" docker exec -e REDISCLI_AUTH "$R" redis-cli ping 2>&1)" = PONG ]; then
-    ok "T16 a plain value (no kms address) is used as written — no kms call for it"
-else bad "T16 plain value: running=$(docker inspect -f '{{.State.Running}}' "$R") · $(docker logs "$R" 2>&1 | grep -E 'agent|ERROR' | tail -2 | tr '\n' ' ')"; fi
+stopped && grep -q 'SECRET_MGT=kms but REDIS_PASSWORD is not a kms address' <<< "$(docker logs "$R" 2>&1)" \
+    && ok "T16a SECRET_MGT=kms + a plain password → the container stops with one clear line" || bad "T16a: $(docker logs "$R" 2>&1 | tail -1)"
+docker rm -f "$R" >/dev/null
+run_mycache "SECRET_MGT=local
+PORT=8892
+ANTHROPIC_API_KEY=
+REDIS_PASSWORD=$RPW"
+if healthy && lg="$(docker logs "$R" 2>&1)" && ! grep -q '← kms' <<< "$lg" && grep -q 'secrets: local (SECRET_MGT=local)' <<< "$lg" \
+   && [ "$(REDISCLI_AUTH="$RPW" docker exec -e REDISCLI_AUTH "$R" redis-cli ping 2>&1)" = PONG ]; then
+    ok "T16b SECRET_MGT=local → the real password as written: Redis up, it answers, no kms call"
+else bad "T16b local: running=$(docker inspect -f '{{.State.Running}}' "$R") · $(docker logs "$R" 2>&1 | grep -E 'agent|ERROR' | tail -2 | tr '\n' ' ')"; fi
 docker rm -f "$R" >/dev/null
 
 # ── T21: rotation — a new password in kms + Redis (ACL) is used by the agent's NEXT connection ──
@@ -232,9 +241,9 @@ grep -nE '(echo|printf|print).*REDIS_PASSWORD' "$MYCACHE/start.sh" "$AGENT"/*.sh
 grep -nE -- '-a[", ]+.*REDIS_PASSWORD|"-a"' "$MYCACHE/docker-compose.yml" "$AGENT/server.py" "$MYCACHE"/*.sh "$AGENT"/*.sh >/dev/null && t8=1
 for f in .env cache-agent/agent.conf; do                                         # tracked + secret-free (only kms addresses)
     git -C "$MYCACHE" ls-files --error-unmatch "$f" >/dev/null 2>&1 || t8=1
-    grep -E '^[A-Z_]*(PASS|PASSWORD|SECRET|TOKEN|API_KEY)[A-Z_]*=.+' "$MYCACHE/$f" | grep -v '^KMS_MASTER_PASSWORD_DIR=' | grep -vqE '=(https?://[^ ]+|\$\{KMS_URL\})/v1/kv/' && t8=1   # the password FOLDER's path: no secret
+    grep -E '^[A-Z_]*(PASS|PASSWORD|SECRET|TOKEN|API_KEY)[A-Z_]*=.+' "$MYCACHE/$f" | grep -v '^KMS_MASTER_PASSWORD_DIR=\|^SECRET_MGT=' | grep -vqE '=(https?://[^ ]+|\$\{KMS_URL\})/v1/kv/' && t8=1   # the password FOLDER's path: no secret
 done
-[ "$(grep -cE '^KMS_URL=https?://' "$AGENT/agent.conf")" = 1 ] && ! grep -qE '^[A-Z_]+=https?://[^ ]+/v1/kv/' "$AGENT/agent.conf" || t8=1   # kms's base ONCE (TESTSERVER-46)
+grep -qx 'SECRET_MGT=kms' "$AGENT/agent.conf" && [ "$(grep -cE '^KMS_URL=https?://' "$AGENT/agent.conf")" = 1 ] && ! grep -qE '^[A-Z_]+=https?://[^ ]+/v1/kv/' "$AGENT/agent.conf" || t8=1   # kms's base ONCE (TESTSERVER-46)
 grep -rnE 'projectspace/kms|\.\./kms/|\.\./\.\./kms/' --include=*.sh --include=*.py --include=*.yml "$MYCACHE" | grep -v 'test_kms.sh\|test_agent_signup.sh\|test_register_missing_keys.sh' \
     | grep -v 'mountspace/usb/myworkspace/projectspace/kms/master_password' >/dev/null && t8=1   # decoupled: HTTP only — kms's password FOLDER (read-only mount) is no kms file
 git -C "$MYCACHE" check-ignore -q cache-agent/connect_external/kms/credentials/x || t8=1   # login files never in git

@@ -26,6 +26,10 @@ ask() { { printf '%s' "$1" > /dev/tty; } 2>/dev/null || printf '%s' "$1" >&2; }
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENT="$(cd "$HERE/../.." && pwd)"
 ENV_FILE="${REG_AGENT_CONF:-$AGENT/agent.conf}"                 # REG_*: tests point elsewhere
+source "$HERE/kms_conf.sh"                                  # secret_mgt (TESTSERVER-67)
+if [ "$(secret_mgt "$ENV_FILE")" != kms ]; then
+    echo -e "\033[36m[ INFO ]\033[0m SECRET_MGT is local — the passwords are in $(basename "$ENV_FILE") itself, no kms sign-up needed"; exit 0
+fi
 URL="${KMS_URL:-http://127.0.0.1:8110}"
 CRED="${KMS_APPROLE_DIR:-}"; [ -n "$CRED" ] || CRED="$HERE/credentials"
 CIDRS="${KMS_ALLOWED_CIDRS:-172.28.0.0/16,127.0.0.1/32}"        # logins only from this PC / its Docker network

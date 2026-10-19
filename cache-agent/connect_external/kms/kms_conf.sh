@@ -18,3 +18,9 @@ kms_conf() {
     local b; b="$(kms_base "$1")"
     grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$1" 2>/dev/null | sed "s#\${KMS_URL}#${b}#g"
 }
+# secret_mgt FILE → kms | local: FILE's SECRET_MGT (TESTSERVER-67) — missing / empty → local · unknown → WARN (stderr), local
+secret_mgt() {
+    local v; v="$(sed -nE 's/^SECRET_MGT[[:space:]]*=[[:space:]]*//p' "$1" 2>/dev/null | tail -1 | tr -d "\"'\r" | tr 'A-Z' 'a-z' | xargs)"
+    case "$v" in kms|local) echo "$v" ;; "") echo local ;;
+        *) echo "[WARN] SECRET_MGT=$v is not known (kms · local) — using local" >&2; echo local ;; esac
+}

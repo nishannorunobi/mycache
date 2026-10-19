@@ -71,7 +71,7 @@ printf '%s' "rpw-$(head -c 9 /dev/urandom | od -An -tx1 | tr -d ' \n')" | python
 
 # ── a temp copy of the project: cache-agent with NO login, agent.conf pointing at the throwaway kms ──────────
 C="$TMP/proj"; mkdir -p "$C/cache-agent/connect_external/kms"; cp -a "$PROJ/start.sh" "$C/"
-cp -a "$AGENT/supervisor.py" "$C/cache-agent/"; cp -a "$HERE/kms.py" "$HERE/signup_with_kms.sh" "$C/cache-agent/connect_external/kms/"
+cp -a "$AGENT/supervisor.py" "$C/cache-agent/"; cp -a "$HERE/kms.py" "$HERE/kms_conf.sh" "$HERE/signup_with_kms.sh" "$C/cache-agent/connect_external/kms/"
 sed "s#http://kms-openbao:8200#$U#g" "$AGENT/agent.conf" > "$C/cache-agent/agent.conf"
 CRED="$C/cache-agent/connect_external/kms/credentials"
 MPW="$TMP/usb/kms/master_password"; mkdir -p "$MPW"; printf '%s\n' "$PW" > "$MPW/master_password"; chmod 600 "$MPW/master_password"

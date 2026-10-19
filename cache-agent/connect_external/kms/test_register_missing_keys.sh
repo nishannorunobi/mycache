@@ -137,6 +137,12 @@ echo "$o8" >> "$OUT"
 [ "$(grep -c "$U" "$C/cache-agent/agent.conf")" = 1 ] && [ "$(grep -cE '^[A-Z_]+=\$\{KMS_URL\}/v1/kv/data/' "$C/cache-agent/agent.conf")" = 2 ] \
     && ok "R9 kms's base is ONE line (KMS_URL) — the 2 keys (\${KMS_URL}/…) all reached the throwaway kms through it" || fail "R9 base lines=$(grep -c "$U" "$C/cache-agent/agent.conf")"
 
+# R10 SECRET_MGT=local (TESTSERVER-67) → nothing to register, nothing written
+sed "s#^SECRET_MGT=.*#SECRET_MGT=local#" "$C/cache-agent/agent.conf" > "$TMP/local.conf"
+o10="$(KMS_TOKEN="$TOK" KMS_URL="$U" REG_AGENT_CONF="$TMP/local.conf" bash "$KD/register_kms_cache_keys_with_random_initial.sh" 2>&1)"; rc10=$?
+[ $rc10 = 0 ] && grep -q 'SECRET_MGT is local' <<< "$o10" && grep -q '0 created · 0 already there' <<< "$o10" \
+    && ok "R10 SECRET_MGT=local → nothing to register in kms" || fail "R10 rc=$rc10 [$(tail -1 <<< "$o10")]"
+
 # R7 nothing secret in any output
 { grep -qF -- "$TOK" "$OUT" || grep -qF -- "$PW" "$OUT" || grep -qF -- "$A" "$OUT" || grep -qF -- "$G" "$OUT" || grep -qF -- "$REAL" "$OUT"; } \
     && fail "R7 a value / token / password appeared in the output" || ok "R7 no value, token or password in any output"

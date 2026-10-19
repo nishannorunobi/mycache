@@ -10,9 +10,10 @@
 #
 # How         /opt/venv/bin/python /cache-agent/supervisor.py        (in the container)
 #
-# Steps       0. no kms login yet → signs itself up: the owner's kms password from kms's master_password (read-only
+# Steps       0. (SECRET_MGT=kms only) no kms login yet → signs itself up: the owner's kms password from kms's master_password (read-only
 #                mount, KMS_MASTER_PASSWORD_FILE) → its own connect_external/kms/signup_with_kms.sh (KMS_TOKEN)
-#             1. agent.conf → settings; every kms address → its value (kms.py, own login) — a key kms does not have →
+#             1. agent.conf → settings; SECRET_MGT (TESTSERVER-67): local (also when not set) → the values as written, no
+#                kms · kms → every kms address → its value (kms.py, own login) — a key kms does not have →
 #                connect_external/kms/register_kms_cache_keys_with_random_initial.sh (owner login from
 #                master_password): created with an initial random value (an outside key: a placeholder), fetched again
 #             2. /run/redis.conf (RAM): requirepass; the Redis UI's copy in /mycache-secrets
@@ -173,6 +174,30 @@ def ensure_login(env):
     say("signed up with kms — login saved in connect_external/kms/credentials/ (600)")
 
 
+SECRET_NAME = re.compile(r"(PASS|PASSWD|PASSWORD|SECRET|TOKEN|_KEY)$", re.I)   # a password-like setting
+
+
+def secret_mode(env):
+    """agent.conf's SECRET_MGT (TESTSERVER-67): kms → the password lines are kms addresses (sign-up, register, fetch) ·
+    local → they hold the real values, used as written, no kms at all · missing / empty → local · unknown → WARN, local.
+    A wrong mix stops with one clear line: a kms address in local mode, a plain password in kms mode."""
+    from dotenv import dotenv_values
+    conf = {k: (v or "") for k, v in dotenv_values(os.path.join(AGENT_DIR, "agent.conf")).items()}
+    v = conf.get("SECRET_MGT", "").strip().lower()
+    mode = v if v in ("kms", "local") else "local"
+    if v and v not in ("kms", "local"):
+        say(f"WARN: SECRET_MGT={v} is not known (kms · local) — using local")
+    for k, val in conf.items():
+        if mode == "local" and kms.is_address(val):
+            say(f"ERROR: SECRET_MGT={v or 'local (not set)'} but {k} is a kms address — set SECRET_MGT=kms in agent.conf, or write the real value")
+            sys.exit(1)
+        if mode == "kms" and SECRET_NAME.search(k) and val.strip() and not kms.is_address(val) and not re.match(r"(ENABLE|DISABLE)_", k):
+            say(f"ERROR: SECRET_MGT=kms but {k} is not a kms address — write ${{KMS_URL}}/v1/kv/data/<entry>, or set SECRET_MGT=local")
+            sys.exit(1)
+    say(f"secrets: {mode} (SECRET_MGT{'=' + v if v else ' not set'})")
+    return mode
+
+
 MISSING = (" is not in kms", "no key ")             # kms.py's words for a key kms does not have (a 403 "may not read" is not)
 
 
@@ -243,8 +268,11 @@ def main(argv):
         return 0
 
     env = settings()
-    ensure_login(env)              # no kms login yet → signs itself up (TESTSERVER-24)
-    secrets = fetch(env)           # only the kms addresses; a plain value in agent.conf stays as written
+    if secret_mode(env) == "kms":             # SECRET_MGT (TESTSERVER-67) — local: the values as written, no kms
+        ensure_login(env)                     # no kms login yet → signs itself up
+        secrets = fetch(env)                  # every kms address → its value (a missing key → registered first)
+    else:
+        secrets = {}
     current = {**env, **secrets}.get("REDIS_PASSWORD", "")
     redis_p = start_redis(current)
     api_p = start_api(env, secrets)

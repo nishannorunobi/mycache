@@ -55,7 +55,8 @@ source .env      # Redis settings — no secret
 MASTER_PW_DIR="${KMS_MASTER_PASSWORD_DIR:-}"
 [ -n "$MASTER_PW_DIR" ] && [ "${MASTER_PW_DIR#/}" = "$MASTER_PW_DIR" ] && MASTER_PW_DIR="$SCRIPT_DIR/$MASTER_PW_DIR"
 MASTER_PW="$MASTER_PW_DIR/master_password"
-if ! ls cache-agent/connect_external/kms/credentials/*/secret_id >/dev/null 2>&1; then
+_SM="$(sed -nE 's/^SECRET_MGT[[:space:]]*=[[:space:]]*//p' cache-agent/agent.conf 2>/dev/null | tail -1 | tr -d "\"'\r" | tr 'A-Z' 'a-z' | xargs)"
+if [ "$_SM" = kms ] && ! ls cache-agent/connect_external/kms/credentials/*/secret_id >/dev/null 2>&1; then   # SECRET_MGT=local (or not set): no kms (TESTSERVER-67)
     if [ -n "$MASTER_PW_DIR" ] && [ -s "$MASTER_PW" ] && grep -q '[^[:space:]]' "$MASTER_PW" 2>/dev/null; then
         echo -e "\033[36m[ INFO ]${RESET} the cache-agent has no kms login yet — it signs itself up as it starts (kms's master_password is filled)"
     elif [ -z "${SVC_RUN:-}" ] && [ -t 0 ]; then

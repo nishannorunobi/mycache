@@ -40,6 +40,9 @@ ENV_FILE="${REG_AGENT_CONF:-$(cd "$HERE/../.." && pwd)/agent.conf}"
 OWNER="${KMS_OWNER:-nishan}"
 BY="${KMS_REGISTER_BY:-mycache-cache-agent}"            # who asked — kept in kms's note
 source "$HERE/kms_conf.sh"                                  # the config lines with ${KMS_URL} expanded (TESTSERVER-46)
+if [ "$(secret_mgt "$ENV_FILE")" != kms ]; then                     # SECRET_MGT=local (or not set): no kms (TESTSERVER-67)
+    info "SECRET_MGT is local — the passwords are in $(basename "$ENV_FILE") itself, nothing to register in kms"; ok "0 created · 0 already there · local"; exit 0
+fi
 CONF="$(kms_conf "$ENV_FILE")"
 # no names → every key whose value is a kms address (the component's own list — nothing else is ever registered)
 [ $# -gt 0 ] || set -- $(printf '%s\n' "$CONF" | grep -E '^[A-Za-z_][A-Za-z0-9_]*=https?://[^ ]+/v1/kv/data/' | cut -d= -f1)
