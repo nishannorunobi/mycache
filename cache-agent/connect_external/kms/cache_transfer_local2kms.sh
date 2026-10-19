@@ -23,4 +23,10 @@ if [ -f "$_WS_ROOT/init/create_logging_path.sh" ]; then source "$_WS_ROOT/init/c
 # ──────────────────────────────────────────────────────────────────────────────
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONF="${REG_AGENT_CONF:-$(cd "$HERE/../.." && pwd)/agent.conf}"                 # REG_*: tests point elsewhere
-python3 "$HERE/kms_transfer.py" local2kms --mode-conf "$CONF" --conf "$CONF"
+export KMS_MASTER_PASSWORD_FILE="${KMS_MASTER_PASSWORD_FILE:-$_WS_ROOT/mountspace/usb/myworkspace/projectspace/kms/master_password/master_password}"
+python3 "$HERE/kms_transfer.py" local2kms --mode-conf "$CONF" --conf "$CONF"; rc=$?
+# step 3 of the rotation done → this component fetches from kms at its next start; no kms login yet → say how (TESTSERVER-94)
+if [ $rc = 0 ] && ! ls "${KMS_CREDENTIALS_DIR:-$HERE/credentials}"/*/secret_id >/dev/null 2>&1; then
+    echo -e "\033[36m[ INFO ]\033[0m next: sign this component up with kms (once): bash $HERE/signup_with_kms.sh"
+fi
+exit $rc
