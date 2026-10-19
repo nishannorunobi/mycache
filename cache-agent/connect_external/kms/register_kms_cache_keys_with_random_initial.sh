@@ -1,13 +1,13 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────────────────
-# register_kms_keys_when_missing_with_random_initial.sh — keys the cache-agent needs but kms does not have → created
+# register_kms_cache_keys_with_random_initial.sh — keys the cache-agent needs but kms does not have → created
 #                                                          there with an initial random value (owner rule, 2026-10-17)
 #
 # What for    Every key is generated in kms automatically; you change the value later by hand in the kms UI. The
 #             cache-agent runs this when its fetch finds a key missing — a fresh kms never stops Redis.
 # Who         cache-agent/supervisor.py (start: the keys its fetch could not find) — or you, by hand.
-# How         bash cache-agent/connect_external/kms/register_kms_keys_when_missing_with_random_initial.sh KEY [KEY …]
-#             bash cache-agent/connect_external/kms/register_kms_keys_when_missing_with_random_initial.sh
+# How         bash cache-agent/connect_external/kms/register_kms_cache_keys_with_random_initial.sh KEY [KEY …]
+#             bash cache-agent/connect_external/kms/register_kms_cache_keys_with_random_initial.sh
 #             KEY = a name in agent.conf whose value is a kms address (${KMS_URL}/v1/kv/data/<entry>[#OTHER_KEY]);
 #             no KEY = ALL of them — every kms line of agent.conf (svcmgt/register_all_kms_keys.sh at the start)
 # Steps       1. owner login: KMS_TOKEN (handed over by the agent) · else kms's master_password (KMS_MASTER_PASSWORD_FILE)

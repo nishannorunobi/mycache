@@ -13,7 +13,7 @@
 # Steps       0. no kms login yet → signs itself up: the owner's kms password from kms's master_password (read-only
 #                mount, KMS_MASTER_PASSWORD_FILE) → its own connect_external/kms/signup_with_kms.sh (KMS_TOKEN)
 #             1. agent.conf → settings; every kms address → its value (kms.py, own login) — a key kms does not have →
-#                connect_external/kms/register_kms_keys_when_missing_with_random_initial.sh (owner login from
+#                connect_external/kms/register_kms_cache_keys_with_random_initial.sh (owner login from
 #                master_password): created with an initial random value (an outside key: a placeholder), fetched again
 #             2. /run/redis.conf (RAM): requirepass; the Redis UI's copy in /mycache-secrets
 #             3. start redis-server as a child (the image's docker-entrypoint → user redis)
@@ -178,7 +178,7 @@ MISSING = (" is not in kms", "no key ")             # kms.py's words for a key k
 
 def fetch(env):
     """Every kms address → its value. A key kms does not have → registered once with an initial random value
-    (connect_external/kms/register_kms_keys_when_missing_with_random_initial.sh, owner rule 2026-10-17), then fetched
+    (connect_external/kms/register_kms_cache_keys_with_random_initial.sh, owner rule 2026-10-17), then fetched
     again — a fresh kms never stops Redis. A placeholder (an outside key) is named once: its feature is off."""
     try:
         secrets, where = kms.resolve(env)
@@ -196,8 +196,8 @@ def fetch(env):
                     sys.exit(1)
                 missing.append(name)
         say(f"{', '.join(missing)}: not in kms — registering with an initial random value")
-        base, token, mine = owner_login(env, f"bash connect_external/kms/register_kms_keys_when_missing_with_random_initial.sh {' '.join(missing)}")
-        rc = run_kms_script("register_kms_keys_when_missing_with_random_initial.sh", base, token, missing)
+        base, token, mine = owner_login(env, f"bash connect_external/kms/register_kms_cache_keys_with_random_initial.sh {' '.join(missing)}")
+        rc = run_kms_script("register_kms_cache_keys_with_random_initial.sh", base, token, missing)
         if mine:
             revoke(base, token)
         del token

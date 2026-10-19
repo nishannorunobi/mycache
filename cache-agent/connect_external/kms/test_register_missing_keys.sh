@@ -4,7 +4,7 @@
 #                                  (owner rule 2026-10-17), on a THROWAWAY kms + a temp copy
 #
 # What for    Prove supervisor.py's fetch on a fresh kms: a missing key is created by its own
-#             register_kms_keys_when_missing_with_random_initial.sh (owner login from the read-only master_password),
+#             register_kms_cache_keys_with_random_initial.sh (owner login from the read-only master_password),
 #             then fetched — Redis is never stopped by a missing key; nothing is ever overwritten; no value shown.
 #             The live kms, its usb/ folder and the real credentials/ are never touched (checked before/after).
 # Checks      R1 a fresh kms: every key is missing → registered in one go, every key fetched, "⚠ placeholder" named;
@@ -64,7 +64,7 @@ knote() { curl -s -H @<(printf 'X-Vault-Token: %s\n' "$TOK") "$U/v1/kv/metadata/
 
 # ── a temp copy: cache-agent signed up (as on your VM), agent.conf pointing at the throwaway kms ─────────────────────
 C="$TMP/proj"; KD="$C/cache-agent/connect_external/kms"; mkdir -p "$KD"
-cp -a "$AGENT/supervisor.py" "$C/cache-agent/"; cp -a "$HERE/kms.py" "$HERE/kms_conf.sh" "$HERE/signup_with_kms.sh" "$HERE/register_kms_keys_when_missing_with_random_initial.sh" "$KD/"
+cp -a "$AGENT/supervisor.py" "$C/cache-agent/"; cp -a "$HERE/kms.py" "$HERE/kms_conf.sh" "$HERE/signup_with_kms.sh" "$HERE/register_kms_cache_keys_with_random_initial.sh" "$KD/"
 sed "s#^KMS_URL=.*#KMS_URL=$U#" "$AGENT/agent.conf" > "$C/cache-agent/agent.conf"   # kms's base: ONE line (TESTSERVER-46)
 IMG=mycache-redis:register-test                          # this checkout's image (bash + curl), a test-only tag — never the live one
 REDIS_VERSION="$(grep -E '^REDIS_VERSION=' "$PROJ/.env" | cut -d= -f2)"; _DIG="$(grep -E '^REDIS_DIGEST=' "$PROJ/.env" | cut -d= -f2)"
@@ -108,7 +108,7 @@ REAL="sk-real-$(head -c 9 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 printf '%s' "$REAL" | python3 -c 'import sys,json; print(json.dumps({"data":{"ANTHROPIC_API_KEY":sys.stdin.read()}}))' \
     | curl -s -o /dev/null -X POST -H @<(printf 'X-Vault-Token: %s\n' "$TOK") --data @- "$U/v1/kv/data/shared/anthropic"
 v0="$(kver shared/anthropic)"
-o5="$(KMS_TOKEN="$TOK" KMS_URL="$U" REG_AGENT_CONF="$C/cache-agent/agent.conf" bash "$KD/register_kms_keys_when_missing_with_random_initial.sh" ANTHROPIC_API_KEY 2>&1)"; rc5=$?
+o5="$(KMS_TOKEN="$TOK" KMS_URL="$U" REG_AGENT_CONF="$C/cache-agent/agent.conf" bash "$KD/register_kms_cache_keys_with_random_initial.sh" ANTHROPIC_API_KEY 2>&1)"; rc5=$?
 echo "$o5" >> "$OUT"
 [ $rc5 = 0 ] && grep -q 'ANTHROPIC_API_KEY → kv/shared/anthropic: already in kms — left as it is' <<< "$o5" && grep -q '0 created · 1 already there' <<< "$o5" \
   && [ "$(kget shared/anthropic ANTHROPIC_API_KEY)" = "$REAL" ] && [ "$(kver shared/anthropic)" = "$v0" ] \
@@ -119,14 +119,14 @@ echo "$o5" >> "$OUT"
 curl -s -o /dev/null -X DELETE -H @<(printf 'X-Vault-Token: %s\n' "$TOK") "$U/v1/kv/metadata/mycache/redis"
 : > "$MPW/master_password"; o="$(agent)"
 ! grep -q FETCH_DONE <<< "$o" && grep -q "kms's master_password is empty — put your kms password into" <<< "$o" \
-  && grep -q 'register_kms_keys_when_missing_with_random_initial.sh REDIS_PASSWORD' <<< "$o" && [ -z "$(kget mycache/redis REDIS_PASSWORD)" ] \
+  && grep -q 'register_kms_cache_keys_with_random_initial.sh REDIS_PASSWORD' <<< "$o" && [ -z "$(kget mycache/redis REDIS_PASSWORD)" ] \
     && ok "R6 a key missing + master_password empty → one line naming the file + the by-hand command, stops, nothing written" \
     || fail "R6 [$(grep -E 'ERROR' <<< "$o" | head -2 | tr '\n' '¦')]"
 printf '%s\n' "$PW" > "$MPW/master_password"
 
 # R8 the all-keys mode: two entries gone → registered, the other keys "already in kms"
 for e in mycache/redis; do curl -s -o /dev/null -X DELETE -H @<(printf 'X-Vault-Token: %s\n' "$TOK") "$U/v1/kv/metadata/$e"; done
-o8="$(KMS_TOKEN="$TOK" REG_AGENT_CONF="$C/cache-agent/agent.conf" bash "$KD/register_kms_keys_when_missing_with_random_initial.sh" 2>&1)"; rc8=$?
+o8="$(KMS_TOKEN="$TOK" REG_AGENT_CONF="$C/cache-agent/agent.conf" bash "$KD/register_kms_cache_keys_with_random_initial.sh" 2>&1)"; rc8=$?
 echo "$o8" >> "$OUT"
 [ $rc8 = 0 ] && grep -q 'keys: ANTHROPIC_API_KEY REDIS_PASSWORD' <<< "$o8" \
   && grep -q '1 created · 1 already there' <<< "$o8" && [ -n "$(kget mycache/redis REDIS_PASSWORD)" ] \
