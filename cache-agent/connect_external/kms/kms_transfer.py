@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
 # ─────────────────────────────────────────────────────────────────────────────
-# kms_transfer.py — the ROTATION of a component's passwords: kms → temp file → local config → kms (TESTSERVER-75/85/94)
+# kms_transfer.py — a component's passwords: TRANSFER (values, never the config) and CONFIG (the mode) (TESTSERVER-75/85/94 · TESTSERVER-102)
 #
 # What for    The same file in every component's connect_external/kms/ (like kms_conf.sh); run through the
-#             component's <short>_transfer_kms2tempfile.sh · _local2tempfile_random_value.sh · _tempfile2local.sh ·
-#             _local2kms.sh. Every password line keeps its kms address in the comment right above it, in BOTH modes:
+#             component's <short>_transfer_kms2tempfile.sh · _local2tempfile_random_value.sh · _local2kms.sh and
+#             <short>_config_secret_mgt_local.sh · _config_secret_mgt_kms.sh. Every password line keeps its kms address in the comment right above it, in BOTH modes:
 #                 # kms: ${KMS_URL}/v1/kv/data/mycache/redis          (odoo.conf: ; kms: …)
 #                 REDIS_PASSWORD=${KMS_URL}/v1/kv/data/mycache/redis  ← kms   ·   REDIS_PASSWORD=<plain>  ← local
-# How         python3 kms_transfer.py kms2file|random2file|file2conf|local2kms --mode-conf FILE --conf FILE …
+# How         python3 kms_transfer.py kms2file|random2file|local2kms|file2conf|conf2kms --mode-conf FILE --conf FILE …
 #                     [--own-file F --shared-file F --by NAME]      (the temp-file ways need both files)
-# Steps       kms2file    each password line's kms key read from kms → <entry>#<KEY>=<plain> in the component's own
-#                         file; a key in SECRETS_SHARED_KEYS (used by 2+ components — svcmgt says) → the shared file
-#                         (merged) · a key kms lacks → NOT_FOUND_IN_KMS · the config NOT changed · chmod 600 · needs kms
-#             random2file the KEY NAMES only (the config's values are never read) → a new random value (32 letters/
-#                         digits; *_API_KEY · *_TOKEN · SMTP_PASS → placeholder-<random>) for every key the files do
-#                         not have yet — a key already there is kept · no kms, no login
-#             file2conf   each password line ← its key from the own file, else the shared file · its "# kms:" comment
-#                         kept (added when missing) · SECRET_MGT=local — the component runs WITHOUT kms · a line that
-#                         would keep a kms address (its key in no file) → nothing changed at all · no kms
-#             local2kms   SECRET_MGT already kms → nothing to do · each line under a "# kms:" comment: key missing in
-#                         kms → added · different → kms updated (a new version) · the same → left · empty /
-#                         NOT_FOUND_IN_KMS → not sent · a key another component sent first in this run (KMS_TRANSFER_SEEN)
-#                         with a different value → not sent, WARN · the address back on the line · SECRET_MGT=kms
+# Steps       TRANSFER — read one place, write one other, NEVER the config:
+#             kms2file    kms → the temp file (<entry>#<KEY>=<plain>; a key in SECRETS_SHARED_KEYS → the shared file) ·
+#                         a key kms lacks → NOT_FOUND_IN_KMS · chmod 600 · needs kms
+#             random2file key NAMES only → the temp file: 32 random letters/digits (*_API_KEY · *_TOKEN · SMTP_PASS →
+#                         placeholder-<random>) for every key it lacks; a key already there kept · no kms
+#             local2kms   the config's plain values → kms: missing → added · different → a new version · the same → left ·
+#                         empty / NOT_FOUND_IN_KMS → not sent · a key another component sent first in this run
+#                         (KMS_TRANSFER_SEEN) with a different value → not sent, WARN · the config NOT changed
+#             CONFIG — the only ways that write the config (and its mode); all or nothing:
+#             file2conf   each password line ← its value from the temp file (own, else shared) · SECRET_MGT=local ·
+#                         a key not in the file / a kms address without its "# kms:" comment → nothing changed · no kms
+#             conf2kms    each password line ← the address from its "# kms:" comment · SECRET_MGT=kms · kms reachable +
+#                         a login → every key must be in kms (else nothing changed) · not reachable → switched + WARN
 # Login       the kms owner (writing needs the owner; the agents can only read): KMS_TOKEN (handed over by
 #             svcmgt/transfer_all_*.sh) · else KMS_MASTER_PASSWORD_FILE · else typed in a terminal · else one line, exit 1
 # kms         KMS_URL from the caller · else the config's KMS_URL · that one not answering → http://127.0.0.1:8110 (kms on this PC)
@@ -235,7 +235,7 @@ def read_secrets(path):
 def write_secrets(path, vals, used, title):
     os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
     out = [f"# secrets.conf — {title}: PLAIN passwords (TESTSERVER-85)\n",
-           "# <kms entry>#<KEY>=<value> — <short>_transfer_tempfile2local.sh writes them into a SECRET_MGT=local config.\n",
+           "# <kms entry>#<KEY>=<value> — <short>_config_secret_mgt_local.sh writes them into the config.\n",
            "# Temporary hand-over: remove it with  bash housekeeping/clean_temp.sh\n"]
     for k in sorted(vals):
         out += ["\n", f"# used by: {used.get(k, '')}\n", f"{k}={vals[k]}\n"]
@@ -299,48 +299,105 @@ def kms2file(files, base, own, shared_file, by):
               f"{own}{' + ' + shared_file if n_sh else ''} (chmod 600, the config unchanged)")
 
 
+def marked_lines(files, base):
+    """the password lines with their "# kms:" comment: (file, index, name, address as written, entry, key) ·
+    lines that hold a kms address WITHOUT that comment: their names (never written — the address would be lost)"""
+    good, bare = [], []
+    for t in keyed(files, base):
+        path, i = t[0], t[1]
+        if i and MARK.match(files[path][i - 1]):
+            good.append(t)
+        else:
+            bare.append(t[2])
+    return good, bare
+
+
 def file2conf(files, base, mode_conf, own, shared_file):
+    """config → local: each password line ← its value from the temp file · SECRET_MGT=local — all or nothing"""
     if not os.path.isfile(own) and not os.path.isfile(shared_file):
-        stop(f"no secrets file ({own} · {shared_file}) — make one first: <short>_transfer_kms2tempfile.sh "
-             "or <short>_transfer_local2tempfile_random_value.sh")
+        stop(f"no temp file ({own} · {shared_file}) — fill one first: <short>_transfer_kms2tempfile.sh "
+             "or <short>_transfer_local2tempfile_random_value.sh; nothing changed")
     ov, _ = read_secrets(own)
     sv, _ = read_secrets(shared_file)
-    todo, blocked = [], []
-    for path, i, name, raw, entry, key in keyed(files, base):
+    good, bare = marked_lines(files, base)
+    if bare:
+        stop(f"{', '.join(bare)}: a kms address without its “# kms:” comment above it — add the comment first; nothing changed")
+    missing = [t[2] for t in good if ov.get(f"{t[4]}#{t[5]}", sv.get(f"{t[4]}#{t[5]}")) in (None, NOT_FOUND)]
+    if missing:
+        stop(f"{', '.join(missing)}: not in the temp file (or {NOT_FOUND}) — fill it first; nothing changed")
+    written = same = 0
+    for path, i, name, raw, entry, key in good:
         k = f"{entry}#{key}"
         val = ov.get(k, sv.get(k))
-        now = SETTING.match(files[path][i].rstrip("\r\n")).group(3)
-        if val is None or val == NOT_FOUND:
-            if ADDRESS.match(expand(now, base)):
-                blocked.append(name)                                   # it would stay a kms address in a local config
-            else:
-                say("WARN", f"{name} ← {k}: {'not in the file' if val is None else NOT_FOUND} — its local value kept")
-            continue
         if "\n" in val:
-            stop(f"{name}: its value in the file has a line break — a config line cannot hold it; nothing changed")
-        todo.append((path, i, name, raw, k, val, now))
-    if blocked:
-        stop(f"{', '.join(blocked)}: not in the file — their lines still hold kms addresses; nothing changed "
-             "(fill the file first: <short>_transfer_kms2tempfile.sh or <short>_transfer_local2tempfile_random_value.sh)")
-    written = same = 0
-    for path, i, name, raw, k, val, now in sorted(todo, key=lambda t: (t[0], -t[1])):   # bottom-up: inserts keep indexes
-        lines = files[path]
-        if now == val:
-            same += 1
-        else:
-            lines[i] = relined(lines[i], val); written += 1
-            say("OK", f"{name} ← {k}: written from the {'own' if k in ov else 'shared'} file")
-        if not (i and MARK.match(lines[i - 1])):                       # keep the kms address in its comment
-            lines.insert(i, f"{';' if any(l.startswith('[') for l in lines) else '#'} kms: {raw}\n")
+            stop(f"{name}: its value in the temp file has a line break — a config line cannot hold it; nothing changed")
+        if SETTING.match(files[path][i].rstrip("\r\n")).group(3) == val:
+            same += 1; continue
+        files[path][i] = relined(files[path][i], val); written += 1
+        say("OK", f"{name} ← {k}: from the {'own' if k in ov else 'shared'} temp file")
     was = mode_of(files[mode_conf])
     set_mode(files[mode_conf], "local")
     for p, lines in files.items():
         write(p, lines)
-    missing = len(keyed(files, base)) - len(todo)
-    say("OK", f"file → local: {written} written · {same} the same · {missing} not in the file — SECRET_MGT=local"
-              f"{' (was ' + was + ')' if was != 'local' else ''}; runs WITHOUT kms now (git: commit/push for this repo defaults to no)")
+    say("OK", f"config → local: {written} written · {same} the same — SECRET_MGT=local{' (was ' + was + ')' if was != 'local' else ''}; "
+              "runs WITHOUT kms now (git: commit/push for this repo defaults to no)")
     if not os.environ.get("SECRETS_NO_REMINDER"):
         say("INFO", "the plain files are still in mountspace/temp — remove them when done: bash housekeeping/clean_temp.sh")
+
+
+def try_login(base):
+    """for a CHECK only: kms reachable + an owner login → (Kms, mine); else (None, why) — never stops"""
+    url = os.environ.get("KMS_URL", "").rstrip("/") or base
+    if not (url and healthy(url)):
+        url = LOCAL_PC if healthy(LOCAL_PC) and not os.environ.get("KMS_URL") else ""
+    if not url:
+        return None, "kms not reachable"
+    if os.environ.get("KMS_TOKEN"):
+        return (Kms(url, os.environ["KMS_TOKEN"]), False), ""
+    pwf = os.environ.get("KMS_MASTER_PASSWORD_FILE", "")
+    if not (pwf and os.path.isfile(pwf) and open(pwf).read().strip()):
+        try:
+            open("/dev/tty").close()
+        except OSError:
+            return None, "no kms login (no master_password, no terminal)"
+    tok, mine = owner_login(url)                                  # file, else typed — refused → stops (a real error)
+    return (Kms(url, tok), mine), ""
+
+
+def conf2kms(files, base, mode_conf):
+    """config → kms: each password line ← the address from its "# kms:" comment · SECRET_MGT=kms — checked against kms
+    when it can be reached (a key missing there → nothing changed)"""
+    good, bare = marked_lines(files, base)
+    if not good and not bare:
+        stop(f"no “# kms:” comment above any password in {os.path.basename(mode_conf)} — nothing tells the addresses; nothing changed")
+    got, why = try_login(base)
+    if got:
+        kms, mine = got
+        try:
+            cur = {e: kms.entry(e) for e in dict.fromkeys(t[4] for t in good)}
+        finally:
+            if mine:
+                try:
+                    kms.call("POST", "auth/token/revoke-self")
+                except SystemExit:
+                    pass
+        missing = [t[2] for t in good if t[5] not in cur[t[4]]]
+        if missing:
+            stop(f"{', '.join(missing)}: not in kms — send them first: <short>_transfer_local2kms.sh "
+                 "(or kms-keys makes NEW random ones at start, which would not match); nothing changed")
+        say("INFO", f"checked: all {len(good)} key(s) are in kms")
+    else:
+        say("WARN", f"{why} — could not check that kms has the keys; switched anyway (missing ones get NEW random values at start)")
+    written = 0
+    for path, i, name, raw, entry, key in good:
+        if SETTING.match(files[path][i].rstrip("\r\n")).group(3) != raw:
+            files[path][i] = relined(files[path][i], raw); written += 1
+    was = mode_of(files[mode_conf])
+    set_mode(files[mode_conf], "kms")
+    for p, lines in files.items():
+        write(p, lines)
+    say("OK", f"config → kms: {written} line(s) back to their kms address — SECRET_MGT=kms{' (was ' + was + ')' if was != 'kms' else ''}; "
+              "fetches from kms at its next start")
 
 
 def random2file(files, base, own, shared_file, by):
@@ -384,8 +441,8 @@ def main(argv):
     if argv and argv[0] in ("-h", "--help"):
         usage()
         return 0
-    if not argv or argv[0] not in ("local2kms", "kms2file", "file2conf", "random2file"):
-        print("usage: kms_transfer.py local2kms|kms2file|file2conf|random2file --mode-conf FILE --conf FILE …  (run through the component's scripts)")
+    if not argv or argv[0] not in ("local2kms", "kms2file", "random2file", "file2conf", "conf2kms"):
+        print("usage: kms_transfer.py local2kms|kms2file|random2file|file2conf|conf2kms --mode-conf FILE --conf FILE …  (run through the component's scripts)")
         return 2
     way, mode_conf, confs, own, shared_file, by, i = argv[0], None, [], "", "", "", 1
     while i < len(argv):
@@ -415,8 +472,11 @@ def main(argv):
          "file2conf": lambda: file2conf(files, base, mode_conf, own, shared_file),
          "random2file": lambda: random2file(files, base, own, shared_file, who)}[way]()
         return 0
+    if way == "conf2kms":
+        conf2kms(files, base, mode_conf)
+        return 0
     if mode == "kms":
-        say("OK", f"local → kms: already SECRET_MGT=kms in {os.path.basename(mode_conf)} — nothing to do")
+        say("OK", f"local → kms: SECRET_MGT=kms in {os.path.basename(mode_conf)} — its lines hold kms addresses, nothing to send")
         return 0
 
     todo = items(files, base, way)
@@ -471,13 +531,8 @@ def main(argv):
         if seen_f:
             with open(seen_f, "a") as f:
                 f.write("".join(f"{e}#{k}\n" for e, new in changes.items() for k in new))
-        for path, i, name, raw, entry, key, _ in todo:
-            files[path][i] = relined(files[path][i], raw)
-        set_mode(files[mode_conf], "kms")
-        for p, lines in files.items():
-            write(p, lines)
-        say("OK", f"local → kms: {added} added · {updated} updated · {same} the same · {unsent} not sent — SECRET_MGT=kms; "
-                  f"{names} hold kms addresses again")
+        say("OK", f"local → kms: {added} added · {updated} updated · {same} the same · {unsent} not sent — {names} NOT changed "
+                  "(switch the config: <short>_config_secret_mgt_kms.sh)")
     finally:
         if mine:
             try:
