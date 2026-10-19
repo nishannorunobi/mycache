@@ -1,17 +1,19 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────────────────
-# cache_readfile_write2conf.sh — mycache (cache-agent): the plain hand-over file → its own config, ONLY when SECRET_MGT=local (TESTSERVER-85)
+# cache_transfer_kms2tempfile.sh — mycache (cache-agent): every password read from kms into a PLAIN hand-over file (TESTSERVER-85)
 #
-# What for    Fill this component's local config from the file cache_export_secrets_kms2file.sh wrote — no kms needed.
-#             SECRET_MGT=kms → skipped (a kms config holds kms addresses, never plain passwords).
-# Who         You — or svcmgt/readfile_write2conf.sh (every component).
-# How         bash projectspace/mycache/cache-agent/connect_external/kms/cache_readfile_write2conf.sh      (safe to run again: the same → not written)
-# Steps       1. SECRET_MGT not local → "skipped", nothing changed
-#             2. each password line (its "# kms:" comment names the key) ← the value from its own file, else the shared file
-#             3. a key in neither file / NOT_FOUND_IN_KMS → the line left as it is (WARN)
-# Output      [  OK  ] file → config: 2 written · 0 the same · 0 not in the file — SECRET_MGT=local   (values never shown)
-# Errors      no secrets file at all → "run the export first", nothing changed
-# Next        remove the plain files when done: bash housekeeping/clean_temp.sh (by hand) · restart the component
+# What for    A plain copy of this component's passwords, to fill its config later WITHOUT kms
+#             (cache_transfer_tempfile2local.sh, when SECRET_MGT=local). The config itself is NOT changed.
+# Who         You — or svcmgt/transfer_all_kms2tempfile.sh (every component, one kms login; it also says which keys
+#             are shared — used by 2+ components — and those go to the shared file).
+# How         bash projectspace/mycache/cache-agent/connect_external/kms/cache_transfer_kms2tempfile.sh      (safe to run again: rewrites the file)
+# Login       kms's master_password file · not there → asks your kms password in the terminal · no terminal → one line, stop
+# Files       mountspace/temp/myworkspace/projectspace/mycache/cache-agent/secrets.conf  (its own keys · chmod 600 · mirrors the workspace)
+#             mountspace/temp/myworkspace/shared/secrets.conf          (keys used by 2+ components, from svcmgt)
+#             one line per kms key: <entry>#<KEY>=<value>, "used by" above it · a key kms lacks → NOT_FOUND_IN_KMS
+# Output      [  OK  ] kms → file: 2 in its own file · 0 in the shared file · 0 not found in kms — …   (values never shown)
+# Errors      kms not running · login refused · a read refused → one line, nothing written
+# Next        remove the plain files when done: bash housekeeping/clean_temp.sh (by hand)
 # ─────────────────────────────────────────────────────────────────────────────
 case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} n==1{ sub(/^# ?/,""); if(!t){printf "\033[1m%s\033[0m\n",$0; t=1; next} l=substr($0,1,12); if(l ~ /^[A-Z][A-Za-z ]+$/){c=(l ~ /^Errors/)?"\033[33m":"\033[36m"; printf "%s%s\033[0m%s\n",c,l,substr($0,13)} else print }' "$0"; exit 0 ;; esac
 set -uo pipefail
@@ -26,4 +28,5 @@ COMP="$(cd "$HERE/../.." && pwd)"                                    # this comp
 _TMPWS="${SECRETS_TEMP_DIR:-$_WS_ROOT/mountspace/temp}/$(basename "$_WS_ROOT")"
 OWN="${SECRETS_OWN_FILE:-$_TMPWS/${COMP#$_WS_ROOT/}/secrets.conf}"
 SHARED="${SECRETS_SHARED_FILE:-$_TMPWS/shared/secrets.conf}"
-python3 "$HERE/kms_transfer.py" file2conf --mode-conf "$CONF" --conf "$CONF" --own-file "$OWN" --shared-file "$SHARED" --by "mycache (cache-agent)"
+export KMS_MASTER_PASSWORD_FILE="${KMS_MASTER_PASSWORD_FILE:-$_WS_ROOT/mountspace/usb/myworkspace/projectspace/kms/master_password/master_password}"
+python3 "$HERE/kms_transfer.py" kms2file --mode-conf "$CONF" --conf "$CONF" --own-file "$OWN" --shared-file "$SHARED" --by "mycache (cache-agent)"

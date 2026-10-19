@@ -3,7 +3,7 @@
 # kms_transfer.py — a component's passwords moved between kms, its own config and a plain hand-over file (TESTSERVER-75/85)
 #
 # What for    The same file in every component's connect_external/kms/ (like kms_conf.sh); run through the
-#             component's <name>_transfer_kms2local.sh / _local2kms.sh / _export_secrets_kms2file.sh / _readfile_write2conf.sh.
+#             component's <name>_transfer_kms2local.sh / _local2kms.sh / _transfer_kms2tempfile.sh / _transfer_tempfile2local.sh.
 #             Every password line keeps its kms address in the comment right above it, in BOTH modes:
 #                 # kms: ${KMS_URL}/v1/kv/data/mycache/redis          (odoo.conf: ; kms: …)
 #                 REDIS_PASSWORD=${KMS_URL}/v1/kv/data/mycache/redis  ← kms   ·   REDIS_PASSWORD=<plain>  ← local
@@ -239,7 +239,7 @@ def read_secrets(path):
 def write_secrets(path, vals, used, title):
     os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
     out = [f"# secrets.conf — {title}: PLAIN passwords (TESTSERVER-85)\n",
-           "# <kms entry>#<KEY>=<value> — <short>_readfile_write2conf.sh writes them into a SECRET_MGT=local config.\n",
+           "# <kms entry>#<KEY>=<value> — <short>_transfer_tempfile2local.sh writes them into a SECRET_MGT=local config.\n",
            "# Temporary hand-over: remove it with  bash housekeeping/clean_temp.sh\n"]
     for k in sorted(vals):
         out += ["\n", f"# used by: {used.get(k, '')}\n", f"{k}={vals[k]}\n"]
@@ -308,7 +308,7 @@ def file2conf(files, base, mode_conf, own, shared_file):
         say("OK", f"file → config: SECRET_MGT is not local in {os.path.basename(mode_conf)} — skipped (writes only into a local config)")
         return
     if not os.path.isfile(own) and not os.path.isfile(shared_file):
-        stop(f"no secrets file ({own} · {shared_file}) — run the export first: <short>_export_secrets_kms2file.sh")
+        stop(f"no secrets file ({own} · {shared_file}) — run the export first: <short>_transfer_kms2tempfile.sh")
     ov, _ = read_secrets(own)
     sv, _ = read_secrets(shared_file)
     written = same = missing = 0
