@@ -33,6 +33,7 @@ KMSP="${KMS_PROJECT:-$_WS_ROOT/projectspace/kms}"
 RWS="$(cd "$KMSP/../.." && pwd)"
 OPENBAO_IMAGE="$(grep -E '^OPENBAO_IMAGE=' "$KMSP/dockerspace/.env" | cut -d= -f2-)"   # only the image — never kms's folders
 T=kms-regkeys-mycache-test; P=8130; U=http://127.0.0.1:$P; TODAY="$(date +%Y-%m-%d)"
+day_ok() { [ "$1" = "$TODAY" ] || [ "$1" = "$(date +%Y-%m-%d)" ] || [ "$1" = "$(date -u +%Y-%m-%d)" ]; }   # midnight, or a container in UTC
 TMP="$(mktemp -d)"; FAIL=0; OUT="$TMP/all_output"
 ok()   { echo -e "\033[32m[  OK  ]\033[0m $*"; }
 fail() { echo -e "\033[31m[ERROR]\033[0m  $*"; FAIL=1; }
@@ -88,7 +89,7 @@ grep -q FETCH_DONE <<< "$o" && grep -q 'ANTHROPIC_API_KEY, REDIS_PASSWORD: not i
   && grep -q 'REDIS_PASSWORD ← kms (mycache/redis)$' <<< "$o" && ! grep -qE 'add it: bash|set it in the kms UI' <<< "$o" \
     && ok "R1 fresh kms: the 2 missing keys registered by its own script in one go, every key fetched, the placeholder named" \
     || fail "R1 [$(grep -E 'ERROR|not in kms|registering|placeholder' <<< "$o" | head -4 | tr '\n' '¦')]"
-[[ "$A" =~ ^placeholder-[A-Za-z0-9]{32}$ ]] && [ "$(knote shared/anthropic ANTHROPIC_API_KEY)" = "placeholder;v1;mycache-cache-agent;$TODAY" ] \
+[[ "$A" =~ ^placeholder-[A-Za-z0-9]{32}$ ]] && [ "$(knote shared/anthropic ANTHROPIC_API_KEY | cut -d";" -f1-3)" = "placeholder;v1;mycache-cache-agent" ] && day_ok "$(knote shared/anthropic ANTHROPIC_API_KEY | cut -d";" -f4)" \
     && ok "R2 in kms: placeholder-<32 random> · note initial_ANTHROPIC_API_KEY = placeholder;v1;mycache-cache-agent;$TODAY" \
     || fail "R2 value-shape=$([[ "$A" =~ ^placeholder- ]] && echo placeholder || echo other) note=$(knote shared/anthropic ANTHROPIC_API_KEY)"
 
@@ -96,7 +97,7 @@ grep -q FETCH_DONE <<< "$o" && grep -q 'ANTHROPIC_API_KEY, REDIS_PASSWORD: not i
 curl -s -o /dev/null -X DELETE -H @<(printf 'X-Vault-Token: %s\n' "$TOK") "$U/v1/kv/metadata/mycache/redis"
 o="$(agent)"; G="$(kget mycache/redis REDIS_PASSWORD)"
 grep -q FETCH_DONE <<< "$o" && grep -q 'REDIS_PASSWORD: not in kms' <<< "$o" && [[ "$G" =~ ^[A-Za-z0-9]{32}$ ]] \
-  && [ "$(knote mycache/redis REDIS_PASSWORD)" = "random;v1;mycache-cache-agent;$TODAY" ] && [ "$(kget shared/anthropic ANTHROPIC_API_KEY)" = "$A" ] \
+  && [ "$(knote mycache/redis REDIS_PASSWORD | cut -d";" -f1-3)" = "random;v1;mycache-cache-agent" ] && day_ok "$(knote mycache/redis REDIS_PASSWORD | cut -d";" -f4)" && [ "$(kget shared/anthropic ANTHROPIC_API_KEY)" = "$A" ] \
     && ok "R3 an own password missing → a RANDOM value (32 letters/digits), note 'random'; the placeholder elsewhere untouched" \
     || fail "R3 [$(grep -E 'ERROR|not in kms' <<< "$o" | head -2 | tr '\n' '¦')] note=$(knote mycache/redis REDIS_PASSWORD)"
 
