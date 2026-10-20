@@ -1,18 +1,14 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────────────────
-# cache_config_secret_mgt_local.sh — mycache (cache-agent): its CONFIG switched to local — each password line ← its value from
-#                                    the temp file · SECRET_MGT=local (TESTSERVER-102)
+# cache_config_secret_mgt_local.sh — mycache (cache-agent): CONFIG SECRET_MGT=local — only that line (TESTSERVER-110)
 #
-# What for    The only script (with cache_config_secret_mgt_kms.sh) that writes this component's config. Afterwards it
-#             runs on plain passwords WITHOUT kms ("local deploy"). The temp file comes from a transfer script:
-#             cache_transfer_kms2tempfile.sh (kms's values) or cache_transfer_local2tempfile_random_value.sh (new random).
-# Who         You — or svcmgt/config_all_secret_mgt_local.sh (every component).
+# What for    Switches this component to local: at its next start it uses the plain passwords in its fields, WITHOUT
+#             kms. It changes nothing else. Fill the fields first: cache_transfer_tempfile2local.sh.
+# Who         You — or svcmgt/config_all_secret_mgt_local.sh (every component; also svc_policy.conf's SECRET_MGT).
 # How         bash projectspace/mycache/cache-agent/connect_external/kms/cache_config_secret_mgt_local.sh      (safe to run again)
-# Steps       1. every password line under its "# kms:" comment ← its value from the own temp file, else the shared one
-#             2. SECRET_MGT=local — the "# kms:" comments stay, so cache_config_secret_mgt_kms.sh can switch back
-#             ALL OR NOTHING: a key not in the temp file · a kms address without its "# kms:" comment → nothing changed
-# Output      [  OK  ] config → local: 2 written · 0 the same — SECRET_MGT=local (was kms); runs WITHOUT kms now …
-# Next        restart the component · remove the plain files: bash housekeeping/clean_temp.sh (by hand)
+# Steps       a password field still holding a kms address → refused, nothing changed · else SECRET_MGT=local
+# Output      [  OK  ] SECRET_MGT=local (was kms) — runs WITHOUT kms at its next start …
+# Next        restart the component · back to kms: cache_transfer_local2kms.sh → _comment2local_kmsurl.sh → _config_secret_mgt_kms.sh
 # ─────────────────────────────────────────────────────────────────────────────
 case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} n==1{ sub(/^# ?/,""); if(!t){printf "\033[1m%s\033[0m\n",$0; t=1; next} l=substr($0,1,12); if(l ~ /^[A-Z][A-Za-z ]+$/){c=(l ~ /^Errors/)?"\033[33m":"\033[36m"; printf "%s%s\033[0m%s\n",c,l,substr($0,13)} else print }' "$0"; exit 0 ;; esac
 set -uo pipefail
@@ -22,9 +18,4 @@ if [ -f "$_WS_ROOT/init/create_logging_path.sh" ]; then source "$_WS_ROOT/init/c
 # ──────────────────────────────────────────────────────────────────────────────
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONF="${REG_AGENT_CONF:-$(cd "$HERE/../.." && pwd)/agent.conf}"                 # REG_*: tests point elsewhere
-COMP="$(cd "$HERE/../.." && pwd)"                                    # this component's folder
-# the hand-over files mirror the workspace under mountspace/temp (TESTSERVER-85); SECRETS_*: svcmgt / tests hand them over
-_TMPWS="${SECRETS_TEMP_DIR:-$_WS_ROOT/mountspace/temp}/$(basename "$_WS_ROOT")"
-OWN="${SECRETS_OWN_FILE:-$_TMPWS/${COMP#$_WS_ROOT/}/secrets.conf}"
-SHARED="${SECRETS_SHARED_FILE:-$_TMPWS/shared/secrets.conf}"
-python3 "$HERE/kms_transfer.py" file2conf --mode-conf "$CONF" --conf "$CONF" --own-file "$OWN" --shared-file "$SHARED" --by "mycache (cache-agent)"
+python3 "$HERE/kms_transfer.py" modelocal --mode-conf "$CONF" --conf "$CONF"

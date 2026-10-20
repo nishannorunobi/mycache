@@ -3,7 +3,7 @@
 # cache_transfer_kms2tempfile.sh — mycache (cache-agent): every password read from kms into a PLAIN hand-over file (TESTSERVER-85)
 #
 # What for    A plain copy of this component's passwords, to fill its config later WITHOUT kms
-#             (cache_config_secret_mgt_local.sh, when SECRET_MGT=local). The config itself is NOT changed.
+#             (cache_transfer_tempfile2local.sh, when SECRET_MGT=local). The config itself is NOT changed.
 # Who         You — or svcmgt/transfer_all_kms2tempfile.sh (every component, one kms login; it also says which keys
 #             are shared — used by 2+ components — and those go to the shared file).
 # How         bash projectspace/mycache/cache-agent/connect_external/kms/cache_transfer_kms2tempfile.sh      (safe to run again: rewrites the file)
