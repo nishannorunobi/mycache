@@ -13,6 +13,8 @@
 #                kv/mycache/cache-agent · kv/mycache/redis · kv/shared/anthropic
 #             3. login files → credentials/mycache-cache-agent/ (git-ignored, 600)
 #             4. first time: copy ANTHROPIC_API_KEY from agent.conf into kms
+#             + every key the config names that kms lacks (own + borrowed) → created right away, same login
+#               (register_kms_cache_keys_with_random_initial.sh: initial random value, never overwrites — TESTSERVER-118)
 #
 # Output      [  OK  ] cache-agent registered with kms
 #
@@ -125,11 +127,16 @@ for line in open(path):
         break
 PY
 )"
-    if [ -z "$val" ]; then echo -e "\033[36m[ INFO ]\033[0m $key not in kms yet — the cache-agent creates it at its first fetch (initial random value; register_kms_cache_keys_with_random_initial.sh)"; continue; fi
+    if [ -z "$val" ]; then continue; fi                              # no local value: created below with a random one
     printf '%s\n%s' "$cur" "$val" | python3 -c 'import sys,json
 cur=json.loads(sys.stdin.readline()); cur[sys.argv[1]]=sys.stdin.read(); print(json.dumps({"data": cur}))' "$key" \
         | code POST "kv/data/$kpath" | grep -q '^20' && ok "kv/$kpath $key copied into kms from $(basename "$file")" \
         || { unset val; bad "could not store $key"; exit 1; }
     unset val
 done
+# ── every key the config names that kms does not have yet (its own AND the ones it borrows) → created NOW with this
+#    login (initial random value), so the start never needs kms's master_password just for that (TESTSERVER-118) —
+#    a key that exists is never overwritten
+KMS_TOKEN="$TOKEN" KMS_URL="$URL" REG_AGENT_CONF="$ENV_FILE" bash "$HERE/register_kms_cache_keys_with_random_initial.sh" \
+    || { bad "creating the missing keys in kms failed — the lines above say why"; exit 1; }
 ok "cache-agent registered with kms — start it: bash cache-agent/host_start.sh"

@@ -84,10 +84,10 @@ print("FETCH_DONE")' 2>&1 | tee -a "$OUT"; }
 # R1 + R2 — the fresh kms: every key is missing
 o="$(agent)"
 A="$(kget shared/anthropic ANTHROPIC_API_KEY)"
-grep -q FETCH_DONE <<< "$o" && grep -q 'ANTHROPIC_API_KEY, REDIS_PASSWORD: not in kms — registering with an initial random value' <<< "$o" \
+grep -q FETCH_DONE <<< "$o" && grep -q 'initial RANDOM value' <<< "$o" \
   && grep -q 'ANTHROPIC_API_KEY → kv/shared/anthropic: initial PLACEHOLDER' <<< "$o" && grep -q 'ANTHROPIC_API_KEY ← kms (shared/anthropic)   ⚠ placeholder' <<< "$o" \
   && grep -q 'REDIS_PASSWORD ← kms (mycache/redis)$' <<< "$o" && ! grep -qE 'add it: bash|set it in the kms UI' <<< "$o" \
-    && ok "R1 fresh kms: the 2 missing keys registered by its own script in one go, every key fetched, the placeholder named" \
+    && ok "R1 fresh kms: the 2 missing keys registered in one go (by its sign-up — TESTSERVER-118), every key fetched, the placeholder named" \
     || fail "R1 [$(grep -E 'ERROR|not in kms|registering|placeholder' <<< "$o" | head -4 | tr '\n' '¦')]"
 [[ "$A" =~ ^placeholder-[A-Za-z0-9]{32}$ ]] && [ "$(knote shared/anthropic ANTHROPIC_API_KEY | cut -d";" -f1-3)" = "placeholder;v1;mycache-cache-agent" ] && day_ok "$(knote shared/anthropic ANTHROPIC_API_KEY | cut -d";" -f4)" \
     && ok "R2 in kms: placeholder-<32 random> · note initial_ANTHROPIC_API_KEY = placeholder;v1;mycache-cache-agent;$TODAY" \

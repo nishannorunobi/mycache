@@ -10,7 +10,10 @@
 #             bash cache-agent/connect_external/kms/register_kms_cache_keys_with_random_initial.sh
 #             KEY = a name in agent.conf whose value is a kms address (${KMS_URL}/v1/kv/data/<entry>[#OTHER_KEY]);
 #             no KEY = ALL of them — every kms line of agent.conf (svcmgt/register_all_kms_keys.sh at the start)
-# Steps       1. owner login: KMS_TOKEN (handed over by the agent) · else kms's master_password (KMS_MASTER_PASSWORD_FILE)
+# Steps       0. kms: KMS_URL from the caller · else the config's KMS_URL · that one not answering (on the PC, kms-openbao
+#                does not exist) → the PC's kms: KMS_HOST_URL, default http://127.0.0.1:8110
+#             1. owner login: KMS_TOKEN (handed over) · else kms's master_password (KMS_MASTER_PASSWORD_FILE, default:
+#                the nearest mountspace/usb/myworkspace/projectspace/kms/master_password/master_password going up)
 #                · else asked in a terminal · else one line, exit 1 — the agent's own login can only READ
 #             2. per entry: a key already there → left as it is (never overwritten) · missing → a new random value;
 #                one from an outside service (*_API_KEY, *_TOKEN, SMTP_PASS) → "placeholder-<random>" (it cannot work
@@ -51,6 +54,14 @@ CONF="$(kms_conf "$ENV_FILE")"
 URL="${KMS_URL:-$(kms_base "$ENV_FILE")}"
 [ -n "$URL" ] || { bad "agent.conf names no kms address — nothing registered"; exit 1; }
 h="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$URL/v1/sys/health")"
+# the config may name kms as the CONTAINERS see it (http://kms-openbao:8200); run by hand on the PC that name does not
+# exist → the PC's own kms (KMS_HOST_URL, default http://127.0.0.1:8110) — only when no caller handed over KMS_URL
+if [ "$h" != 200 ] && [ -z "${KMS_URL:-}" ]; then
+    HOST_URL="${KMS_HOST_URL:-http://127.0.0.1:8110}"
+    if [ "$HOST_URL" != "$URL" ] && [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$HOST_URL/v1/sys/health")" = 200 ]; then
+        info "kms at $URL does not answer here — using this PC's kms at $HOST_URL"; URL="$HOST_URL"; h=200
+    fi
+fi
 [ "$h" = 200 ] || { bad "kms at $URL is not running + unsealed (health ${h:-none})"; exit 1; }
 info "asked by: $BY · keys: $*"
 
@@ -58,7 +69,9 @@ info "asked by: $BY · keys: $*"
 MINE=
 if [ -n "${KMS_TOKEN:-}" ]; then TOKEN="$KMS_TOKEN"; info "kms owner login: handed over"
 else
-    PWF="${KMS_MASTER_PASSWORD_FILE:-}"
+    MP=mountspace/usb/myworkspace/projectspace/kms/master_password/master_password          # the usual place on the PC:
+    d="$_WS_ROOT"; while [ "$d" != / ] && [ ! -f "$d/$MP" ]; do d="$(dirname "$d")"; done   # the nearest one up (a test copy → the workspace's)
+    PWF="${KMS_MASTER_PASSWORD_FILE:-$d/$MP}"
     if grep -q '[^[:space:]]' "$PWF" 2>/dev/null; then SRC="kms's master_password"; PW_IN() { head -1 "$PWF" | tr -d '\r\n'; }
     elif { : </dev/tty; } 2>/dev/null; then SRC="typed"; ask "kms password for $OWNER (hidden): "; read -r -s _pw </dev/tty; echo >&2; PW_IN() { printf '%s' "$_pw"; }
     else bad "no kms owner login — put your kms password into kms's master_password (mountspace/usb/myworkspace/projectspace/kms/master_password/master_password), or run by hand: bash $0 $*"; exit 1; fi
