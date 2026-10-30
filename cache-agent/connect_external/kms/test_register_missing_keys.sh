@@ -19,7 +19,7 @@
 #                missing one created, the rest "already in kms"
 #             R9 kms's base is ONE line (KMS_URL): the copy changed only that line, every ${KMS_URL}/… key followed it
 # How         bash cache-agent/connect_external/kms/test_register_missing_keys.sh      (Docker + the kms image; builds a
-#             test image mycache-redis:register-test from this checkout, removed at the end; ~1 min) — from a test copy: KMS_PROJECT=~/myworkspace/projectspace/kms bash …
+#             test image mycache-redis:register-test from this checkout, removed at the end; ~1 min) — from a test copy: KMS_PROJECT=~/myworkspace/projectspace/platform/kms bash …
 # ─────────────────────────────────────────────────────────────────────────────
 case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} n==1{ sub(/^# ?/,""); if(!t){printf "\033[1m%s\033[0m\n",$0; t=1; next} l=substr($0,1,12); if(l ~ /^[A-Z][A-Za-z ]+$/){c=(l ~ /^Errors/)?"\033[33m":"\033[36m"; printf "%s%s\033[0m%s\n",c,l,substr($0,13)} else print }' "$0"; exit 0 ;; esac
 set -uo pipefail
@@ -28,9 +28,9 @@ _WS_ROOT="$(d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; while [ ! -d "$d/
 if [ -f "$_WS_ROOT/ccc/scripts/lib/create_logging_path.sh" ]; then source "$_WS_ROOT/ccc/scripts/lib/create_logging_path.sh"; setup_logging; fi
 # ──────────────────────────────────────────────────────────────────────────────
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; AGENT="$(cd "$HERE/../.." && pwd)"; PROJ="$(dirname "$AGENT")"
-KMSP="${KMS_PROJECT:-$_WS_ROOT/projectspace/kms}"
+KMSP="${KMS_PROJECT:-$_WS_ROOT/projectspace/platform/kms}"
 [ -f "$KMSP/dockerspace/.env" ] || { echo "kms not found at $KMSP — set KMS_PROJECT=<the kms project>"; exit 1; }
-RWS="$(cd "$KMSP/../.." && pwd)"
+RWS="$(cd "$KMSP/../../.." && pwd)"
 OPENBAO_IMAGE="$(grep -E '^OPENBAO_IMAGE=' "$KMSP/dockerspace/.env" | cut -d= -f2-)"   # only the image — never kms's folders
 T=kms-regkeys-mycache-test; P=8130; U=http://127.0.0.1:$P; TODAY="$(date +%Y-%m-%d)"
 day_ok() { [ "$1" = "$TODAY" ] || [ "$1" = "$(date +%Y-%m-%d)" ] || [ "$1" = "$(date -u +%Y-%m-%d)" ]; }   # midnight, or a container in UTC
@@ -40,7 +40,7 @@ fail() { echo -e "\033[31m[ERROR]\033[0m  $*"; FAIL=1; }
 cleanup() { docker rm -f "$T" >/dev/null 2>&1; docker image rm "$IMG" >/dev/null 2>&1; rm -rf "$TMP"; }
 trap cleanup EXIT
 j() { python3 -c "import sys,json; d=json.load(sys.stdin); print($1)" 2>/dev/null; }
-REAL_STATE="$(stat -c '%n %s %Y' "$RWS/projectspace/mycache/cache-agent/connect_external/kms/credentials"/*/* "$RWS/mountspace/usb/myworkspace/projectspace/kms"/* "$RWS/mountspace/usb/myworkspace/projectspace/kms"/*/* 2>/dev/null | sort)"
+REAL_STATE="$(stat -c '%n %s %Y' "$RWS/projectspace/platform/mycache/cache-agent/connect_external/kms/credentials"/*/* "$RWS/mountspace/usb/myworkspace/projectspace/kms"/* "$RWS/mountspace/usb/myworkspace/projectspace/kms"/*/* 2>/dev/null | sort)"
 
 # ── a throwaway kms with its foundation — kms's usb/ = temp folders ──────────────
 mkdir -p "$TMP/kms/data" "$TMP/kms/audit" "$TMP/usb" "$TMP/state"
@@ -148,6 +148,6 @@ o10="$(KMS_TOKEN="$TOK" KMS_URL="$U" REG_AGENT_CONF="$TMP/local.conf" bash "$KD/
     && fail "R7 a value / token / password appeared in the output" || ok "R7 no value, token or password in any output"
 unset TOK PW S1 S2 A G REAL
 
-[ "$(stat -c '%n %s %Y' "$RWS/projectspace/mycache/cache-agent/connect_external/kms/credentials"/*/* "$RWS/mountspace/usb/myworkspace/projectspace/kms"/* "$RWS/mountspace/usb/myworkspace/projectspace/kms"/*/* 2>/dev/null | sort)" = "$REAL_STATE" ] \
+[ "$(stat -c '%n %s %Y' "$RWS/projectspace/platform/mycache/cache-agent/connect_external/kms/credentials"/*/* "$RWS/mountspace/usb/myworkspace/projectspace/kms"/* "$RWS/mountspace/usb/myworkspace/projectspace/kms"/*/* 2>/dev/null | sort)" = "$REAL_STATE" ] \
     && ok "the real credentials/ and usb/ are untouched" || fail "a REAL file changed — check credentials/ and mountspace/usb/"
 [ $FAIL = 0 ] && ok "register-missing-keys tests passed (throwaway kms removed)" || { echo "  some checks failed"; exit 1; }

@@ -8,7 +8,7 @@
 #                or another one as the argument: mycache-redis-ui
 #             2. checks it runs (else: how to start it)
 #             3. a short reminder, then the shell — bash if the image has it, else sh
-# How         bash ~/myworkspace/projectspace/mycache/mycache_container_login.sh          (or: … mycache-redis-ui)
+# How         bash ~/myworkspace/projectspace/platform/mycache/mycache_container_login.sh          (or: … mycache-redis-ui)
 # Careful     the Redis data is REAL (Plane's cache and queues) — look, do not change.
 # See also    a single command without a shell: docker exec mycache-redis <command>
 # ─────────────────────────────────────────────────────────────────────────────

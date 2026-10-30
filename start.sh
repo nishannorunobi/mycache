@@ -72,6 +72,9 @@ WITH_UI=true
 [ "${1:-}" = "--no-ui" ] && WITH_UI=false
 
 echo -e "${BOLD}==> Starting Redis ${REDIS_VERSION}...${RESET}"
+# this pod sits at its folder of ccc/scripts/gitmgt/repos.conf: its relative mounts reach THIS workspace's mountspace/ — else Docker
+# would quietly make EMPTY data folders elsewhere (CLAUDEWORK-258)
+[ "$(cd "$PWD/../../../mountspace" 2>/dev/null && pwd)" = "$_WS_ROOT/mountspace" ] || { echo -e "\033[31m[ERROR]\033[0m  ../../../mountspace from $PWD is not this workspace's mountspace/ — this pod is not at its folder (ccc/scripts/gitmgt/repos.conf): bash ccc/scripts/gitmgt/move_repos_to_new_folders.sh"; exit 1; }
 if $WITH_UI; then
     docker compose up -d
 else

@@ -19,7 +19,7 @@
 # Output      kms password for nishan (hidden): ********
 #             [  OK  ] kv/mycache/redis  REDIS_PASSWORD stored (version 2)
 #             [  OK  ] Redis has the new password — the old one is refused
-#               Update everyone else who uses it: Plane — projectspace/mydocs/.env REDIS_URL (then restart Plane)
+#               Update everyone else who uses it: Plane — projectspace/apps/mydocs/.env REDIS_URL (then restart Plane)
 #
 # Errors      "kms and Redis disagree already" — the current kms value is refused by Redis: fix that
 #             first (docker logs mycache-redis | grep agent). A new value refused → the old one is
@@ -72,7 +72,7 @@ docker restart "$C" >/dev/null || { bad "could not restart $C"; exit 1; }
 for _ in $(seq 1 60); do redis_auth "$NEW" && break; sleep 1; done
 if redis_auth "$NEW" && ! { [ -n "$OLD" ] && redis_auth "$OLD"; }; then
     ok "Redis has the new password — the old one is refused"
-    echo "  The cache-agent follows by itself (it asks kms). Update everyone else who uses it: Plane — projectspace/mydocs/.env REDIS_URL (then restart Plane)"
+    echo "  The cache-agent follows by itself (it asks kms). Update everyone else who uses it: Plane — projectspace/apps/mydocs/.env REDIS_URL (then restart Plane)"
     exit 0
 fi
 bad "Redis did not take the new password — writing the old one back to kms"

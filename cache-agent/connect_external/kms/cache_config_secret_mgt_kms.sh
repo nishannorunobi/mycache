@@ -6,7 +6,7 @@
 #             else. Before: cache_transfer_local2kms.sh (values → kms) and cache_transfer_comment2local_kmsurl.sh
 #             (the fields ← their kms addresses).
 # Who         You — or ccc/scripts/svcmgt/config_all_secret_mgt_kms.sh (every component; also svc_policy.conf's SECRET_MGT).
-# How         bash projectspace/mycache/cache-agent/connect_external/kms/cache_config_secret_mgt_kms.sh      (safe to run again)
+# How         bash projectspace/platform/mycache/cache-agent/connect_external/kms/cache_config_secret_mgt_kms.sh      (safe to run again)
 # Steps       1. a field that is not its kms address yet → refused, nothing changed
 #             2. kms reachable + a login (master_password file, else asked) → every key must be in kms, else refused ·
 #                kms not reachable / no login → switched anyway + WARN

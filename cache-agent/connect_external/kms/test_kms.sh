@@ -44,7 +44,7 @@ fi
 
 AGENT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"             # cache-agent (this file: connect_external/kms/)
 MYCACHE="$(cd "$AGENT/.." && pwd)"
-PROJECT="${KMS_PROJECT:-$_WS_ROOT/projectspace/kms}"                     # test-only: the kms image + bootstrap
+PROJECT="${KMS_PROJECT:-$_WS_ROOT/projectspace/platform/kms}"                     # test-only: the kms image + bootstrap
 DOCKERSPACE="$PROJECT/dockerspace"
 LOGS="$_WS_ROOT/mountspace/logs/myworkspace/projectspace"
 OPENBAO_IMAGE="$(grep -E '^OPENBAO_IMAGE=' "$DOCKERSPACE/.env" | cut -d= -f2-)"   # only the image — never kms's folders (TESTSERVER-24)
@@ -244,7 +244,7 @@ for f in .env cache-agent/agent.conf; do                                        
     grep -E '^[A-Z_]*(PASS|PASSWORD|SECRET|TOKEN|API_KEY)[A-Z_]*=.+' "$MYCACHE/$f" | grep -v '^KMS_MASTER_PASSWORD_DIR=\|^SECRET_MGT=' | grep -vqE '=(https?://[^ ]+|\$\{KMS_URL\})/v1/kv/' && t8=1   # the password FOLDER's path: no secret
 done
 grep -qx 'SECRET_MGT=kms' "$AGENT/agent.conf" && [ "$(grep -cE '^KMS_URL=https?://' "$AGENT/agent.conf")" = 1 ] && ! grep -qE '^[A-Z_]+=https?://[^ ]+/v1/kv/' "$AGENT/agent.conf" || t8=1   # kms's base ONCE (TESTSERVER-46)
-grep -rnE 'projectspace/kms|\.\./kms/|\.\./\.\./kms/' --include=*.sh --include=*.py --include=*.yml "$MYCACHE" | grep -v 'test_kms.sh\|test_agent_signup.sh\|test_register_missing_keys.sh' \
+grep -rnE 'projectspace/platform/kms|\.\./kms/|\.\./\.\./kms/' --include=*.sh --include=*.py --include=*.yml "$MYCACHE" | grep -v 'test_kms.sh\|test_agent_signup.sh\|test_register_missing_keys.sh' \
     | grep -v 'mountspace/usb/myworkspace/projectspace/kms/master_password' >/dev/null && t8=1   # decoupled: HTTP only — kms's password FOLDER (read-only mount) is no kms file
 git -C "$MYCACHE" check-ignore -q cache-agent/connect_external/kms/credentials/x || t8=1   # login files never in git
 [ -d "$MYCACHE/connect_external" ] && t8=1                                                  # one kms folder: the agent's

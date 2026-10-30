@@ -7,11 +7,11 @@
 #             cache_transfer_tempfile2local.sh writes them into its config. Instead of cache_transfer_kms2tempfile.sh.
 # Who         You — or ccc/scripts/svcmgt/transfer_all_local2tempfile_random_value.sh (every component; it also says which keys are
 #             shared — used by 2+ components — those get ONE value in the shared file, so both sides match).
-# How         bash projectspace/mycache/cache-agent/connect_external/kms/cache_transfer_local2tempfile_random_value.sh      (safe to run again)
+# How         bash projectspace/platform/mycache/cache-agent/connect_external/kms/cache_transfer_local2tempfile_random_value.sh      (safe to run again)
 # Steps       1. the KEY NAMES only, from the "# kms:" comments — the config's values are never read or copied
 #             2. a key the file has not yet → 32 random letters/digits; *_API_KEY · *_TOKEN · SMTP_PASS → placeholder-<random>
 #                (put your real one in the file) · a key already in the file → kept, never overwritten
-# Files       mountspace/temp/myworkspace/projectspace/mycache/cache-agent/secrets.conf  (its own keys · chmod 600 · mirrors the workspace)
+# Files       mountspace/temp/myworkspace/projectspace/platform/mycache/cache-agent/secrets.conf  (its own keys · chmod 600 · mirrors the workspace)
 #             mountspace/temp/myworkspace/shared/secrets.conf          (keys used by 2+ components, from svcmgt)
 # Output      [  OK  ] random → file: 2 new · 0 already there (kept) — …   (values never shown)
 # Next        cache_transfer_tempfile2local.sh · remove the plain files later: bash ccc/scripts/housekeeping/clean_temp.sh (by hand)
