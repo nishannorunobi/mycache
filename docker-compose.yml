@@ -88,6 +88,6 @@ volumes:
 networks:
   mycache-net:
     driver: bridge
-  # Shared network created by myworkspace/dockerspace/docker_network.sh (via docker_up).
+  # Shared network created by myworkspace/iam_cloud_machine/network/docker_network.sh (via docker_up).
   my_docker_network:
     external: true
