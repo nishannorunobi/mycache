@@ -7,7 +7,7 @@
 #             changed. Then: cache_transfer_comment2local_kmsurl.sh → cache_config_secret_mgt_kms.sh.
 #             Each line under its "# kms: <address>" comment: the key missing in kms → added · there but
 #             different → kms updated (a new version) · the same → left · empty / NOT_FOUND_IN_KMS → not sent
-# Who         You — or svcmgt/transfer_all_local2kms.sh (every component, one kms login).
+# Who         You — or ccc/scripts/svcmgt/transfer_all_local2kms.sh (every component, one kms login).
 # How         bash cache-agent/connect_external/kms/cache_transfer_local2kms.sh      (asks your kms password; safe to run again)
 # Steps       1. SECRET_MGT=kms (its lines hold addresses) → nothing to send
 #             2. owner login (master_password file, else asked) · each value → kms, one write per entry, other keys kept
@@ -19,7 +19,7 @@ case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} 
 set -uo pipefail
 # ── Mirror logging ─────────────────────────────────────────────────────────────
 _WS_ROOT="$(d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; while [ ! -d "$d/mountspace" ] && [ "$d" != "/" ]; do d="$(dirname "$d")"; done; echo "$d")"
-if [ -f "$_WS_ROOT/init/create_logging_path.sh" ]; then source "$_WS_ROOT/init/create_logging_path.sh"; setup_logging; fi
+if [ -f "$_WS_ROOT/ccc/scripts/lib/create_logging_path.sh" ]; then source "$_WS_ROOT/ccc/scripts/lib/create_logging_path.sh"; setup_logging; fi
 # ──────────────────────────────────────────────────────────────────────────────
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONF="${REG_AGENT_CONF:-$(cd "$HERE/../.." && pwd)/agent.conf}"                 # REG_*: tests point elsewhere

@@ -4,7 +4,7 @@
 #
 # What for    A plain copy of this component's passwords, to fill its config later WITHOUT kms
 #             (cache_transfer_tempfile2local.sh, when SECRET_MGT=local). The config itself is NOT changed.
-# Who         You — or svcmgt/transfer_all_kms2tempfile.sh (every component, one kms login; it also says which keys
+# Who         You — or ccc/scripts/svcmgt/transfer_all_kms2tempfile.sh (every component, one kms login; it also says which keys
 #             are shared — used by 2+ components — and those go to the shared file).
 # How         bash projectspace/mycache/cache-agent/connect_external/kms/cache_transfer_kms2tempfile.sh      (safe to run again: rewrites the file)
 # Login       kms's master_password file · not there → asks your kms password in the terminal · no terminal → one line, stop
@@ -13,13 +13,13 @@
 #             one line per kms key: <entry>#<KEY>=<value>, "used by" above it · a key kms lacks → NOT_FOUND_IN_KMS
 # Output      [  OK  ] kms → file: 2 in its own file · 0 in the shared file · 0 not found in kms — …   (values never shown)
 # Errors      kms not running · login refused · a read refused → one line, nothing written
-# Next        remove the plain files when done: bash housekeeping/clean_temp.sh (by hand)
+# Next        remove the plain files when done: bash ccc/scripts/housekeeping/clean_temp.sh (by hand)
 # ─────────────────────────────────────────────────────────────────────────────
 case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} n==1{ sub(/^# ?/,""); if(!t){printf "\033[1m%s\033[0m\n",$0; t=1; next} l=substr($0,1,12); if(l ~ /^[A-Z][A-Za-z ]+$/){c=(l ~ /^Errors/)?"\033[33m":"\033[36m"; printf "%s%s\033[0m%s\n",c,l,substr($0,13)} else print }' "$0"; exit 0 ;; esac
 set -uo pipefail
 # ── Mirror logging ─────────────────────────────────────────────────────────────
 _WS_ROOT="$(d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; while [ ! -d "$d/mountspace" ] && [ "$d" != "/" ]; do d="$(dirname "$d")"; done; echo "$d")"
-if [ -f "$_WS_ROOT/init/create_logging_path.sh" ]; then source "$_WS_ROOT/init/create_logging_path.sh"; setup_logging; fi
+if [ -f "$_WS_ROOT/ccc/scripts/lib/create_logging_path.sh" ]; then source "$_WS_ROOT/ccc/scripts/lib/create_logging_path.sh"; setup_logging; fi
 # ──────────────────────────────────────────────────────────────────────────────
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONF="${REG_AGENT_CONF:-$(cd "$HERE/../.." && pwd)/agent.conf}"                 # REG_*: tests point elsewhere

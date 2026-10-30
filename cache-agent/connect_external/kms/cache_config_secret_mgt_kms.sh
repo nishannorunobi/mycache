@@ -5,7 +5,7 @@
 # What for    Switches this component to kms: at its next start it fetches its passwords from kms. It changes nothing
 #             else. Before: cache_transfer_local2kms.sh (values → kms) and cache_transfer_comment2local_kmsurl.sh
 #             (the fields ← their kms addresses).
-# Who         You — or svcmgt/config_all_secret_mgt_kms.sh (every component; also svc_policy.conf's SECRET_MGT).
+# Who         You — or ccc/scripts/svcmgt/config_all_secret_mgt_kms.sh (every component; also svc_policy.conf's SECRET_MGT).
 # How         bash projectspace/mycache/cache-agent/connect_external/kms/cache_config_secret_mgt_kms.sh      (safe to run again)
 # Steps       1. a field that is not its kms address yet → refused, nothing changed
 #             2. kms reachable + a login (master_password file, else asked) → every key must be in kms, else refused ·
@@ -18,7 +18,7 @@ case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} 
 set -uo pipefail
 # ── Mirror logging ─────────────────────────────────────────────────────────────
 _WS_ROOT="$(d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; while [ ! -d "$d/mountspace" ] && [ "$d" != "/" ]; do d="$(dirname "$d")"; done; echo "$d")"
-if [ -f "$_WS_ROOT/init/create_logging_path.sh" ]; then source "$_WS_ROOT/init/create_logging_path.sh"; setup_logging; fi
+if [ -f "$_WS_ROOT/ccc/scripts/lib/create_logging_path.sh" ]; then source "$_WS_ROOT/ccc/scripts/lib/create_logging_path.sh"; setup_logging; fi
 # ──────────────────────────────────────────────────────────────────────────────
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONF="${REG_AGENT_CONF:-$(cd "$HERE/../.." && pwd)/agent.conf}"                 # REG_*: tests point elsewhere

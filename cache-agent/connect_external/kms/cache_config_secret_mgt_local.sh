@@ -4,7 +4,7 @@
 #
 # What for    Switches this component to local: at its next start it uses the plain passwords in its fields, WITHOUT
 #             kms. It changes nothing else. Fill the fields first: cache_transfer_tempfile2local.sh.
-# Who         You — or svcmgt/config_all_secret_mgt_local.sh (every component; also svc_policy.conf's SECRET_MGT).
+# Who         You — or ccc/scripts/svcmgt/config_all_secret_mgt_local.sh (every component; also svc_policy.conf's SECRET_MGT).
 # How         bash projectspace/mycache/cache-agent/connect_external/kms/cache_config_secret_mgt_local.sh      (safe to run again)
 # Steps       a password field still holding a kms address → refused, nothing changed · else SECRET_MGT=local
 # Output      [  OK  ] SECRET_MGT=local (was kms) — runs WITHOUT kms at its next start …
@@ -14,7 +14,7 @@ case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} 
 set -uo pipefail
 # ── Mirror logging ─────────────────────────────────────────────────────────────
 _WS_ROOT="$(d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; while [ ! -d "$d/mountspace" ] && [ "$d" != "/" ]; do d="$(dirname "$d")"; done; echo "$d")"
-if [ -f "$_WS_ROOT/init/create_logging_path.sh" ]; then source "$_WS_ROOT/init/create_logging_path.sh"; setup_logging; fi
+if [ -f "$_WS_ROOT/ccc/scripts/lib/create_logging_path.sh" ]; then source "$_WS_ROOT/ccc/scripts/lib/create_logging_path.sh"; setup_logging; fi
 # ──────────────────────────────────────────────────────────────────────────────
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONF="${REG_AGENT_CONF:-$(cd "$HERE/../.." && pwd)/agent.conf}"                 # REG_*: tests point elsewhere

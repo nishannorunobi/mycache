@@ -6,7 +6,7 @@
 # What for    Reads the "# kms:" comments, writes this component's password fields — nothing else: SECRET_MGT is NOT
 #             touched (that is cache_config_secret_mgt_kms.sh, next). Send the plain values to kms BEFORE, they are gone
 #             from the fields after this: cache_transfer_local2kms.sh.
-# Who         You — or svcmgt/transfer_all_comment2local_kmsurl.sh (every component).
+# Who         You — or ccc/scripts/svcmgt/transfer_all_comment2local_kmsurl.sh (every component).
 # How         bash projectspace/mycache/cache-agent/connect_external/kms/cache_transfer_comment2local_kmsurl.sh      (safe to run again; no kms needed)
 # Output      [  OK  ] comments → password fields: 2 back to their kms address · 0 already — SECRET_MGT not touched …
 # Next        cache_config_secret_mgt_kms.sh
@@ -15,7 +15,7 @@ case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} 
 set -uo pipefail
 # ── Mirror logging ─────────────────────────────────────────────────────────────
 _WS_ROOT="$(d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; while [ ! -d "$d/mountspace" ] && [ "$d" != "/" ]; do d="$(dirname "$d")"; done; echo "$d")"
-if [ -f "$_WS_ROOT/init/create_logging_path.sh" ]; then source "$_WS_ROOT/init/create_logging_path.sh"; setup_logging; fi
+if [ -f "$_WS_ROOT/ccc/scripts/lib/create_logging_path.sh" ]; then source "$_WS_ROOT/ccc/scripts/lib/create_logging_path.sh"; setup_logging; fi
 # ──────────────────────────────────────────────────────────────────────────────
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONF="${REG_AGENT_CONF:-$(cd "$HERE/../.." && pwd)/agent.conf}"                 # REG_*: tests point elsewhere

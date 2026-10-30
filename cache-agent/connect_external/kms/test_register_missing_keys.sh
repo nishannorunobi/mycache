@@ -15,7 +15,7 @@
 #             R5 by hand, the key already in kms with YOUR value → "already in kms", value + version unchanged
 #             R6 a key missing + master_password empty → one line naming the file and the by-hand command, exit 1, nothing written
 #             R7 no value, token or password in any output
-#             R8 no names (the all-keys mode, for svcmgt/register_all_kms_keys.sh): every kms line of agent.conf — the
+#             R8 no names (the all-keys mode, for ccc/scripts/svcmgt/register_all_kms_keys.sh): every kms line of agent.conf — the
 #                missing one created, the rest "already in kms"
 #             R9 kms's base is ONE line (KMS_URL): the copy changed only that line, every ${KMS_URL}/… key followed it
 # How         bash cache-agent/connect_external/kms/test_register_missing_keys.sh      (Docker + the kms image; builds a
@@ -25,7 +25,7 @@ case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} 
 set -uo pipefail
 # ── Mirror logging ─────────────────────────────────────────────────────────────
 _WS_ROOT="$(d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; while [ ! -d "$d/mountspace" ] && [ "$d" != "/" ]; do d="$(dirname "$d")"; done; echo "$d")"
-if [ -f "$_WS_ROOT/init/create_logging_path.sh" ]; then source "$_WS_ROOT/init/create_logging_path.sh"; setup_logging; fi
+if [ -f "$_WS_ROOT/ccc/scripts/lib/create_logging_path.sh" ]; then source "$_WS_ROOT/ccc/scripts/lib/create_logging_path.sh"; setup_logging; fi
 # ──────────────────────────────────────────────────────────────────────────────
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; AGENT="$(cd "$HERE/../.." && pwd)"; PROJ="$(dirname "$AGENT")"
 KMSP="${KMS_PROJECT:-$_WS_ROOT/projectspace/kms}"

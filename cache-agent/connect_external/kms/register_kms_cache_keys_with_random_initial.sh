@@ -9,7 +9,7 @@
 # How         bash cache-agent/connect_external/kms/register_kms_cache_keys_with_random_initial.sh KEY [KEY …]
 #             bash cache-agent/connect_external/kms/register_kms_cache_keys_with_random_initial.sh
 #             KEY = a name in agent.conf whose value is a kms address (${KMS_URL}/v1/kv/data/<entry>[#OTHER_KEY]);
-#             no KEY = ALL of them — every kms line of agent.conf (svcmgt/register_all_kms_keys.sh at the start)
+#             no KEY = ALL of them — every kms line of agent.conf (ccc/scripts/svcmgt/register_all_kms_keys.sh at the start)
 # Steps       1. owner login: KMS_TOKEN (handed over by the agent) · else kms's master_password (KMS_MASTER_PASSWORD_FILE)
 #                · else asked in a terminal · else one line, exit 1 — the agent's own login can only READ
 #             2. per entry: a key already there → left as it is (never overwritten) · missing → a new random value;
@@ -28,7 +28,7 @@ case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} 
 set -uo pipefail
 # ── Mirror logging ─────────────────────────────────────────────────────────────
 _WS_ROOT="$(d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; while [ ! -d "$d/mountspace" ] && [ "$d" != "/" ]; do d="$(dirname "$d")"; done; echo "$d")"
-if [ -f "$_WS_ROOT/init/create_logging_path.sh" ]; then source "$_WS_ROOT/init/create_logging_path.sh"; setup_logging; fi
+if [ -f "$_WS_ROOT/ccc/scripts/lib/create_logging_path.sh" ]; then source "$_WS_ROOT/ccc/scripts/lib/create_logging_path.sh"; setup_logging; fi
 # ──────────────────────────────────────────────────────────────────────────────
 ask() { { printf '%s' "$1" > /dev/tty; } 2>/dev/null || printf '%s' "$1" >&2; }
 ok()   { echo -e "\033[32m[  OK  ]\033[0m $*"; }

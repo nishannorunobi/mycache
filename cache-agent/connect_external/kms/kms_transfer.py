@@ -25,7 +25,7 @@
 #             modekms       SECRET_MGT=kms · refused while a field is not its kms address · kms reachable + a login →
 #                           every key must be in kms (else refused) · not reachable → switched + WARN
 # Login       the kms owner (writing needs the owner; the agents can only read): KMS_TOKEN (handed over by
-#             svcmgt/transfer_all_*.sh) · else KMS_MASTER_PASSWORD_FILE · else typed in a terminal · else one line, exit 1
+#             ccc/scripts/svcmgt/transfer_all_*.sh) · else KMS_MASTER_PASSWORD_FILE · else typed in a terminal · else one line, exit 1
 # kms         KMS_URL from the caller · else the config's KMS_URL · that one not answering → http://127.0.0.1:8110 (kms on this PC)
 # Output      values are never shown — only names, entries and counts; the last line:
 #             [  OK  ] kms → local: 2 written · 0 not found in kms — SECRET_MGT=local
@@ -153,7 +153,7 @@ def owner_login(url):
                 pw, src = getpass.getpass(f"kms password for {os.environ.get('KMS_OWNER', 'nishan')} (hidden): ", stream=tty), "typed"
         except OSError:
             stop("no kms owner login — run it in a terminal (it asks your kms password), or "
-                 "svcmgt/transfer_all_*.sh (one login from kms's master_password)")
+                 "ccc/scripts/svcmgt/transfer_all_*.sh (one login from kms's master_password)")
     req = urllib.request.Request(f"{url}/v1/auth/userpass/login/{os.environ.get('KMS_OWNER', 'nishan')}", method="POST",
                                  data=json.dumps({"password": pw}).encode())
     del pw
@@ -238,7 +238,7 @@ def write_secrets(path, vals, used, title):
     os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
     out = [f"# secrets.conf — {title}: PLAIN passwords (TESTSERVER-85)\n",
            "# <kms entry>#<KEY>=<value> — <short>_transfer_tempfile2local.sh writes them into the password fields.\n",
-           "# Temporary hand-over: remove it with  bash housekeeping/clean_temp.sh\n"]
+           "# Temporary hand-over: remove it with  bash ccc/scripts/housekeeping/clean_temp.sh\n"]
     for k in sorted(vals):
         out += ["\n", f"# used by: {used.get(k, '')}\n", f"{k}={vals[k]}\n"]
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".secrets-")
@@ -342,7 +342,7 @@ def file2local(files, base, own, shared_file):
     say("OK", f"file → password fields: {written} written · {same} the same — SECRET_MGT not touched "
               "(switch: <short>_config_secret_mgt_local.sh)")
     if not os.environ.get("SECRETS_NO_REMINDER"):
-        say("INFO", "the plain files are still in mountspace/temp — remove them when done: bash housekeeping/clean_temp.sh")
+        say("INFO", "the plain files are still in mountspace/temp — remove them when done: bash ccc/scripts/housekeeping/clean_temp.sh")
 
 
 def comment2local(files, base):
@@ -514,7 +514,7 @@ def main(argv):
     try:
         cur = {e: kms.entry(e) for e in dict.fromkeys(t[4] for t in todo)}
         changes, added, updated, same, unsent = {}, 0, 0, 0, 0
-        seen_f = os.environ.get("KMS_TRANSFER_SEEN", "")             # svcmgt/transfer_all_local2kms.sh: keys sent this run
+        seen_f = os.environ.get("KMS_TRANSFER_SEEN", "")             # ccc/scripts/svcmgt/transfer_all_local2kms.sh: keys sent this run
         seen = set(open(seen_f).read().split()) if seen_f and os.path.isfile(seen_f) else set()
         for path, i, name, raw, entry, key, _ in todo:
             val = SETTING.match(files[path][i].rstrip("\r\n")).group(3)
