@@ -30,7 +30,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ok()   { echo -e "\033[32m[  OK  ]\033[0m $*"; }
 err()  { echo -e "\033[31m[ERROR]\033[0m  $*"; }
-running() { docker ps --format "{{.Names}}" 2>/dev/null | grep -qx "$1"; }
+running() { docker ps --filter status=running --format "{{.Names}}" 2>/dev/null | grep -qx "$1"; }
 WITH_UI=true; [ "${1:-}" = --no-ui ] && WITH_UI=false
 if running mycache-redis && { ! $WITH_UI || running mycache-redis-ui; }; then ok "Redis already running"; exit 0; fi
 # Standalone: the shared Docker network this compose joins — created if missing, so the
