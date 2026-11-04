@@ -20,9 +20,10 @@
 #             3. start redis-server as a child (the image's docker-entrypoint → user redis)
 #             4. start the agent API (uvicorn server:app :PORT) as a child — it gets the kms
 #                addresses and asks kms itself per new Redis connection (rotation-proof)
-#             5. watch: Redis exits → this exits too (compose restarts the container)
-#                       API exits   → started again after 2 s
-#                       SIGTERM     → Redis saves and stops, then the API, then exit 0
+#             5. (LOG_URL set) start Fluent Bit as a child: its mirror files → Loki (fluent-bit/fluent-bit.yaml, LOGAN-29)
+#             6. watch: Redis exits → this exits too (compose restarts the container)
+#                       API exits   → started again after 2 s · Fluent Bit exits → WARN, again after 5 s
+#                       SIGTERM     → Redis saves and stops, then the API, then Fluent Bit (flushes), exit 0
 #
 # Output      [agent] REDIS_PASSWORD ← kms (mycache/redis)      names only, never values
 #             [agent] redis-server started (pid 12) · [agent] API started on :8892 (pid 20)
@@ -42,6 +43,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 
 AGENT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(AGENT_DIR, "connect_external", "kms"))
@@ -49,6 +51,8 @@ import kms  # noqa: E402
 
 REDIS_CONF = "/run/redis.conf"
 UI_SECRET = "/mycache-secrets/redis_password"
+FLUENT_BIT_CONF = os.path.join(AGENT_DIR, "fluent-bit", "fluent-bit.yaml")
+FLUENT_BIT_STATE = "/mountspace/logs/.fluent-bit"         # its read positions + buffer, in the log volume (LOGAN-29)
 
 
 LOG_ROOT = os.environ.get("LOG_MIRROR_ROOT", "")     # a mirror folder → the files below too · none → stdout only (LOGAN-12)
@@ -306,6 +310,30 @@ def start_api(env, secrets):
     return p
 
 
+def start_fluent_bit():
+    """Fluent Bit as a child (LOGAN-29): the container's mirror files → Loki at LOG_URL. No LOG_URL (or no
+    mirror folder) → not started: the files stay in the volume. It gets only what it needs, no secret."""
+    url = os.environ.get("LOG_URL", "")
+    if not (url and LOG_ROOT):
+        say("log shipping off — no LOG_URL" if not url else "log shipping off — no LOG_MIRROR_ROOT")
+        return None
+    u = urllib.parse.urlparse(url)
+    tls = u.scheme == "https"
+    fb_env = {"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"), "LOG_MIRROR_ROOT": LOG_ROOT,
+              "LOKI_HOST": u.hostname or "", "LOKI_PORT": str(u.port or (443 if tls else 3100)),
+              "LOKI_TLS": "on" if tls else "off",
+              "LOG_PROJECT": os.environ.get("LOG_PROJECT", "mycache"),
+              "LOG_CONTAINER": os.environ.get("LOG_CONTAINER", os.environ.get("HOSTNAME", ""))}
+    try:
+        os.makedirs(FLUENT_BIT_STATE, exist_ok=True)
+        p = subprocess.Popen(["fluent-bit", "-c", FLUENT_BIT_CONF], env=fb_env)   # its own lines → stdout only (never tailed)
+    except OSError as e:
+        say(f"WARN: Fluent Bit not started ({e}) — the files stay in the volume")
+        return None
+    say(f"Fluent Bit started → {u.scheme}://{u.hostname}:{fb_env['LOKI_PORT']} (pid {p.pid})")
+    return p
+
+
 def main(argv):
     if len(argv) > 1 and argv[1] in ("-h", "--help"):
         usage()
@@ -321,6 +349,7 @@ def main(argv):
     redis_p = start_redis(current)
     api_p = start_api(env, secrets)
     del secrets
+    fb_p = start_fluent_bit()
 
     stopping = {"now": False}
 
@@ -329,7 +358,7 @@ def main(argv):
     signal.signal(signal.SIGTERM, on_term)
     signal.signal(signal.SIGINT, on_term)
 
-    api_restarts = 0
+    api_restarts = fb_restarts = 0
     while True:
         if stopping["now"]:
             say("stopping — Redis saves and stops first")
@@ -341,18 +370,30 @@ def main(argv):
                     p.wait(timeout=30)
                 except subprocess.TimeoutExpired:
                     p.kill()
+            if fb_p and fb_p.poll() is None:      # last: it ships the final lines, then flushes and exits
+                fb_p.terminate()
+                try:
+                    fb_p.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    fb_p.kill()
             return 0
         rc = redis_p.poll()
         if rc is not None:
             say(f"ERROR: redis-server exited ({rc}) — stopping; compose restarts the container")
-            if api_p.poll() is None:
-                api_p.terminate()
+            for p in (api_p, fb_p):
+                if p and p.poll() is None:
+                    p.terminate()
             return rc or 1
         if api_p.poll() is not None:
             api_restarts += 1
             say(f"API exited ({api_p.returncode}) — starting it again in 2 s (restart {api_restarts})")
             time.sleep(2)
             api_p = start_api(env, {})
+        if fb_p and fb_p.poll() is not None:     # log shipping never stops the service: WARN, again in 5 s
+            fb_restarts += 1
+            say(f"WARN: Fluent Bit exited ({fb_p.returncode}) — starting it again in 5 s (restart {fb_restarts})")
+            time.sleep(5)
+            fb_p = start_fluent_bit()
         time.sleep(1)
 
 

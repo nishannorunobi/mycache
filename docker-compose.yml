@@ -31,6 +31,9 @@ services:
     env_file: .env                 # Redis settings (no secret — those are kms addresses in cache-agent/agent.conf)
     environment:
       LOG_MIRROR_ROOT: /mountspace/logs/myworkspace/projectspace/platform/mycache
+      LOG_URL: ${LOG_URL:-}            # the log server (.env, from confmgt shared/logging.yml) — empty → no shipping (LOGAN-29)
+      LOG_PROJECT: mycache             # Loki labels of every line this container ships
+      LOG_CONTAINER: mycache-redis
       KMS_MASTER_PASSWORD_FILE: /mountspace/usb/myworkspace/projectspace/kms/master_password/master_password
       PYTHONUNBUFFERED: "1"          # the agent's output reaches docker logs at once
       PYTHONDONTWRITEBYTECODE: "1"   # no root-owned __pycache__ in the mounted cache-agent/ folder
