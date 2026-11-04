@@ -19,6 +19,7 @@ _REL_DIR="$(dirname "${_SELF_ABS#${CONTAINER_WORKDIR:-}/}")"
 if [ -n "${LOG_MIRROR_ROOT:-}" ]; then
     LOG_FILE="${LOG_MIRROR_ROOT}${_REL_DIR}/${_STEM}_${_EXT}.log"
     mkdir -p "$(dirname "$LOG_FILE")" && export LOG_FILE
+    [ -f "$LOG_FILE" ] && [ "$(wc -c < "$LOG_FILE")" -gt 10485760 ] && mv -f "$LOG_FILE" "$LOG_FILE.1" 2>/dev/null || true   # > 10 MB → .1, the old .1 replaced (LOGAN-13)
     # POSIX sh has no process substitution (`> >(...)`), so route stdout/stderr through
     # a FIFO instead: start the timestamper reading it in the background, then point this
     # script's output at it. Same result as the bash block, no bashisms. The FIFO is
