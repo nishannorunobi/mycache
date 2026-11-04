@@ -27,6 +27,9 @@
 # Output      [agent] REDIS_PASSWORD ← kms (mycache/redis)      names only, never values
 #             [agent] redis-server started (pid 12) · [agent] API started on :8892 (pid 20)
 #
+# Logs        the same lines in $LOG_MIRROR_ROOT too: <agent>/supervisor_py.log (these [agent] lines) ·
+#             service/redis_server.log · service/agent_api.log (each child's output) — 10 MB → .1 · no LOG_MIRROR_ROOT → stdout only (LOGAN-14)
+#
 # Errors      kms SEALED / unreachable / no login / no access / key missing → exit 1
 #             with the reason; compose restarts the container, so unsealing is enough
 #
@@ -37,6 +40,7 @@ import re
 import signal
 import subprocess
 import sys
+import threading
 import time
 
 AGENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -47,8 +51,46 @@ REDIS_CONF = "/run/redis.conf"
 UI_SECRET = "/mycache-secrets/redis_password"
 
 
+LOG_ROOT = os.environ.get("LOG_MIRROR_ROOT", "")     # a mirror folder → the files below too · none → stdout only (LOGAN-12)
+LOG_MAX = 10 * 1024 * 1024                           # a mirror file > 10 MB → .1, the old .1 replaced (LOGAN-13)
+SAY_LOG = os.path.join(LOG_ROOT, os.path.basename(AGENT_DIR), "supervisor_py.log") if LOG_ROOT else ""
+
+
+def mirror_append(path, line):
+    """One line into a mirror file (rotated at LOG_MAX). Never raises: logging must not stop the service."""
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        if os.path.exists(path) and os.path.getsize(path) > LOG_MAX:
+            os.replace(path, path + ".1")
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass
+
+
 def say(msg):
     print(f"[agent] {msg}", file=sys.stderr, flush=True)
+    if SAY_LOG:
+        mirror_append(SAY_LOG, time.strftime("[%Y-%m-%d %H:%M:%S] ") + f"[agent] {msg}")
+
+
+def relay(p, name):
+    """A child's output (Popen stdout=PIPE, stderr=STDOUT) → the container's stdout as before AND
+    service/<name>.log (LOGAN-14) — so the container's own collector sees the service too. Keeps reading
+    whatever happens to the file, so the child never blocks on a full pipe."""
+    path = os.path.join(LOG_ROOT, "service", f"{name}.log") if LOG_ROOT else ""
+
+    def run():
+        for raw in iter(p.stdout.readline, b""):
+            line = raw.decode("utf-8", "replace").rstrip("\n")
+            try:
+                print(line, flush=True)
+            except (OSError, ValueError):
+                pass
+            if path:
+                mirror_append(path, line)
+    threading.Thread(target=run, name=f"relay-{name}", daemon=True).start()
+    return p
 
 
 def usage():
@@ -246,7 +288,8 @@ def start_redis(password):
         sys.exit(1)
     write_private(REDIS_CONF, f"requirepass {password}\n", owner="redis", mode=0o600)
     write_private(UI_SECRET, password, mode=0o640)
-    p = subprocess.Popen(["docker-entrypoint.sh", "redis-server", REDIS_CONF, "--appendonly", "yes"], cwd="/data")
+    p = relay(subprocess.Popen(["docker-entrypoint.sh", "redis-server", REDIS_CONF, "--appendonly", "yes"], cwd="/data",
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT), "redis_server")
     say(f"redis-server started (pid {p.pid})")
     return p
 
@@ -256,8 +299,9 @@ def start_api(env, secrets):
     # per new Redis connection (redis-py CredentialProvider) — so a rotation needs no restart.
     api_env = dict(env)
     port = env.get("PORT", "8892")
-    p = subprocess.Popen([sys.executable, "-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", port,
-                          "--no-use-colors", "--access-log"], cwd=AGENT_DIR, env=api_env)
+    p = relay(subprocess.Popen([sys.executable, "-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", port,
+                                "--no-use-colors", "--access-log"], cwd=AGENT_DIR, env=api_env,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT), "agent_api")
     say(f"API started on :{port} (pid {p.pid})")
     return p
 
