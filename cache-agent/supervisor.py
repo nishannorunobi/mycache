@@ -30,6 +30,7 @@
 #
 # Logs        the same lines in $LOG_MIRROR_ROOT too: <agent>/supervisor_py.log (these [agent] lines) ·
 #             service/redis_server.log · service/agent_api.log (each child's output) — 10 MB → .1 · no LOG_MIRROR_ROOT → stdout only (LOGAN-14)
+#             LOG_URL set → Fluent Bit (a child) ships every mirror file to Loki — fluent-bit/fluent-bit.yaml (LOGAN-29)
 #
 # Errors      kms SEALED / unreachable / no login / no access / key missing → exit 1
 #             with the reason; compose restarts the container, so unsealing is enough
