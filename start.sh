@@ -41,6 +41,10 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Reminder (CONFMGT [8.6]): the keys mycache ISSUES (cache-agent/issued_credentials/) — a password near / past its
+# rotation rule (credentials.conf, 90 days) → ⚠ + what to do · otherwise silent. A reminder only: never stops this script.
+bash "$SCRIPT_DIR/cache-agent/issued_credentials/credentials_check.sh" || true
+
 GREEN="\033[32m"; YELLOW="\033[33m"; BOLD="\033[1m"; RESET="\033[0m"
 
 [ -f ".env" ] || { echo -e "\033[31m[ERROR]${RESET} .env not found."; exit 1; }
