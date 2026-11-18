@@ -244,7 +244,7 @@ for f in .env cache-agent/agent.conf; do                                        
     grep -E '^[A-Z_]*(PASS|PASSWORD|SECRET|TOKEN|API_KEY)[A-Z_]*=.+' "$MYCACHE/$f" | grep -v '^KMS_MASTER_PASSWORD_DIR=\|^SECRET_MGT=' | grep -vqE '=(https?://[^ ]+|\$\{KMS_URL\})/v1/kv/' && t8=1   # the password FOLDER's path: no secret
 done
 grep -qx 'SECRET_MGT=kms' "$AGENT/agent.conf" && [ "$(grep -cE '^KMS_URL=https?://' "$AGENT/agent.conf")" = 1 ] && ! grep -qE '^[A-Z_]+=https?://[^ ]+/v1/kv/' "$AGENT/agent.conf" || t8=1   # kms's base ONCE (TESTSERVER-46)
-grep -rnE 'projectspace/platform/kms|\.\./kms/|\.\./\.\./kms/' --include=*.sh --include=*.py --include=*.yml "$MYCACHE" | grep -v 'test_kms.sh\|test_agent_signup.sh\|test_register_missing_keys.sh\|test_credentials.sh' \
+grep -rnE 'projectspace/platform/kms|\.\./kms/|\.\./\.\./kms/' --include=*.sh --include=*.py --include=*.yml "$MYCACHE" | grep -v 'test_kms.sh\|test_agent_signup.sh\|test_register_missing_keys.sh\|test_credentials.sh\|test_credentials.py' \
     | grep -v 'mountspace/usb/myworkspace/projectspace/kms/master_password' >/dev/null && t8=1   # decoupled: HTTP only — kms's password FOLDER (read-only mount) is no kms file
 git -C "$MYCACHE" check-ignore -q cache-agent/connect_external/kms/credentials/x || t8=1   # login files never in git
 [ -d "$MYCACHE/connect_external" ] && t8=1                                                  # one kms folder: the agent's
@@ -284,6 +284,7 @@ bad12=""
 for f in $(cd "$MYCACHE" && { git ls-files '*.sh' '*.py'; ls cache-agent/connect_external/kms/*.sh; } | sort -u); do
     p="$MYCACHE/$f"; n="$(basename "$f")"
     case "$n" in server.py) continue ;; esac                           # FastAPI app: docstring, not a script
+    case "$n" in *.py) grep -q "^\"\"\"$n — " "$p" && continue ;; esac    # a .py with its docstring header: --help = its door's (CLAUDEWORK-332)
     [ "$(grep -c '^# ──────────' "$p")" -ge 2 ] && grep -q "^# $n — " "$p" || { bad12+=" $f(header)"; continue; }
     head -1 "$p" | grep -q '^#!' || continue                           # sourced library: header only
     case "$(head -1 "$p")" in '#!/bin/sh') run_=sh ;; *python*) run_=python3 ;; *) run_=bash ;; esac

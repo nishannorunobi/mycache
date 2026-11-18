@@ -177,4 +177,14 @@ def main(argv):
 
 
 if __name__ == "__main__":
+    # by hand: --help + the mirror log, as usual · --quiet (credentials_check.py): no log here — the runner logs it
+    import pathlib
+    sys.path[:0] = [str(p / "ccc/scripts/lib/python_starter") for p in pathlib.Path(HERE).parents
+                    if (p / "mountspace").is_dir()][:1]
+    try:
+        import starter
+        if "--quiet" not in sys.argv[1:]:
+            starter.start()
+    except ImportError:
+        pass                                                          # a temp copy: no --help, no mirror log
     sys.exit(main(sys.argv[1:]))

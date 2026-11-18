@@ -19,27 +19,4 @@
 # Next        a new key = a new <key>_rotation_check.sh (+ .py) and <key>_rotate.sh here — found by itself,
 #             nothing else changes · keys ANOTHER system gave mycache (it only uses them) go in ../used_credentials/
 # ─────────────────────────────────────────────────────────────────────────────
-case "${1:-}" in -h|--help) awk 'NR==1{next} /^# ─/{n++; if(n==2) exit; next} n==1{ sub(/^# ?/,""); if(!t){printf "\033[1m%s\033[0m\n",$0; t=1; next} l=substr($0,1,12); if(l ~ /^[A-Z][A-Za-z ]+$/){c=(l ~ /^Errors/)?"\033[33m":"\033[36m"; printf "%s%s\033[0m%s\n",c,l,substr($0,13)} else print }' "$0"; exit 0 ;; esac
-set -uo pipefail
-# ── Mirror logging — SILENT on screen: the result always goes to the mirror log, the screen only gets ⚠ / ✗
-_WS_ROOT="$(d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; while [ ! -d "$d/mountspace" ] && [ "$d" != "/" ]; do d="$(dirname "$d")"; done; echo "$d")"
-LOG_FILE=/dev/null
-if [ -f "$_WS_ROOT/ccc/scripts/lib/create_logging_path.sh" ]; then
-    source "$_WS_ROOT/ccc/scripts/lib/create_logging_path.sh"
-    LOG_FILE="$(get_mirror_log_path "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")")"
-    mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null && touch "$LOG_FILE" 2>/dev/null || LOG_FILE=/dev/null
-fi
-log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE" 2>/dev/null || true; }
-# ──────────────────────────────────────────────────────────────────────────────
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SELF="$(basename "${BASH_SOURCE[0]}")"
-worst=0; n=0
-for c in "$HERE"/*_check.sh; do
-    [ -f "$c" ] && [ "$(basename "$c")" != "$SELF" ] || continue
-    out="$(bash "$c" --quiet 2>&1)"; rc=$?; n=$((n + 1))
-    [ -n "$out" ] && { printf '%s\n' "$out"; while IFS= read -r l; do log "$l"; done <<< "$out"; }
-    log "$(basename "$c") → exit $rc"
-    [ "$rc" -gt "$worst" ] && worst=$rc
-done
-log "$n key(s) checked · worst exit $worst"
-exit "$worst"
+STARTER="$0" exec python3 -u "$(dirname "$0")/credentials_check.py" "$@"

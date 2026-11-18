@@ -6,3 +6,6 @@
 # .env holds NO secret (they are in kms) — it is tracked in git
 
 # the kms login files are the cache-agent's: see cache-agent/.gitignore
+
+# Python bytecode (the lifecycle/ · host_lifecycle/ · in_container/ programs)
+__pycache__/

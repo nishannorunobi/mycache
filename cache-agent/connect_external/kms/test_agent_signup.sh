@@ -70,7 +70,7 @@ printf '%s' "rpw-$(head -c 9 /dev/urandom | od -An -tx1 | tr -d ' \n')" | python
     | curl -s -o /dev/null -X POST -H @<(printf 'X-Vault-Token: %s\n' "$TOK") --data @- "$U/v1/kv/data/mycache/redis"   # mycache's own entry (owner seeds it)
 
 # ── a temp copy of the project: cache-agent with NO login, agent.conf pointing at the throwaway kms ──────────
-C="$TMP/proj"; mkdir -p "$C/cache-agent/connect_external/kms"; cp -a "$PROJ/start.sh" "$C/"
+C="$TMP/proj"; mkdir -p "$C/cache-agent/connect_external/kms"; cp -a "$PROJ/start.sh" "$PROJ/lifecycle" "$C/"
 cp -a "$AGENT/supervisor.py" "$C/cache-agent/"; cp -a "$HERE/kms.py" "$HERE/kms_conf.sh" "$HERE/signup_with_kms.sh" "$C/cache-agent/connect_external/kms/"
 sed "s#http://kms-openbao:8200#$U#g" "$AGENT/agent.conf" > "$C/cache-agent/agent.conf"
 CRED="$C/cache-agent/connect_external/kms/credentials"
